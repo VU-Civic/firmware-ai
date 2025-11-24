@@ -1,0 +1,10 @@
+{
+  "Globals": {
+  },
+  "Profiles": {
+    "civicalert": {
+      "memory_pool": "./stm32n6.mpool",
+      "options": "--network-name CivicAlert --native-float --mvei --cache-maintenance --Ocache-opt --enable-epoch-controller --enable-virtual-mem-pools --Os --Oauto --Omax-ca-pipe 0"
+    }
+  }
+}
