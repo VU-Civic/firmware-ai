@@ -458,7 +458,14 @@ void tflac_pack_u64le(tflac_u8* d, tflac_u64 n) {
 TFLAC_PRIVATE
 TFLAC_INLINE
 void tflac_pack_u64be(tflac_u8* d, tflac_u64 n) {
-    *(tflac_u64*)d = __builtin_bswap64(n);
+   d[0] = (tflac_u8)( n >> 56 );
+   d[1] = (tflac_u8)( n >> 48 );
+   d[2] = (tflac_u8)( n >> 40 );
+   d[3] = (tflac_u8)( n >> 32 );
+   d[4] = (tflac_u8)( n >> 24 );
+   d[5] = (tflac_u8)( n >> 16 );
+   d[6] = (tflac_u8)( n >>  8 );
+   d[7] = (tflac_u8)( n       );
 }
 
 typedef void (*tflac_md5_calculator)(tflac*, void* samples);

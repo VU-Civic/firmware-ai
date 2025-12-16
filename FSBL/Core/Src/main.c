@@ -17,6 +17,8 @@ int main(void)
    ai_init();
 
    // Illuminate the MCU status LED
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOBEN);
+   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOBEN);
    WRITE_REG(LED_MCU_STATUS_GPIO_Port->BSRR, LED_MCU_STATUS_Pin);
 
    // Finalize the system configuration
@@ -34,7 +36,7 @@ int main(void)
       {
          storage_open_audio_file(ts);
          storage_write_audio_file((int16_t*)audio_data->audio);
-         //ai_process(audio_data, ai_results.class_probabilities);
+         ai_process(audio_data, ai_results.class_probabilities);
          if (++count == 18)
          {
             ts += 3;

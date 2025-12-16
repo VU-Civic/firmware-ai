@@ -24,11 +24,11 @@
 #define SD_CARD_BUFFER_NUM_BYTES              16384
 
 #define NUM_TASK_CONTEXTS                     2
-#define STORAGE_TASK_STACK_SIZE               (16 * 1024)
+#define STORAGE_TASK_STACK_SIZE               (2 * 1024)
 #define MAX_NUM_SD_CARD_COMMANDS              8
 
 #define SDMMC_CLK                             200000000U
-#define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR50_SWITCH_PATTERN
+#define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR25_SWITCH_PATTERN
 
 typedef struct
 {
@@ -62,6 +62,7 @@ static uint32_t pcm_write_index, output_buffer_len, sd_write_index;
 static uint32_t samples_written, bytes_written;
 static jmp_buf task_contexts[NUM_TASK_CONTEXTS];
 static sd_card_details_t sd_card_details;
+static int8_t output_buffer[8219];
 static tflac flac_encoder;
 
 __attribute__ ((section(".noncacheable")))
@@ -72,9 +73,6 @@ static FIL audio_file;
 
 __attribute__ ((section(".noncacheable")))
 static uint8_t flac_encoder_mem[81936];
-
-__attribute__ ((section(".noncacheable")))
-static int8_t output_buffer[8219];
 
 __attribute__ ((section(".noncacheable")))
 static int8_t sd_write_buffer[2*SD_CARD_BUFFER_NUM_BYTES];
@@ -90,8 +88,10 @@ static int16_t* pcm_channels[AUDIO_NUM_ENCODED_CHANNELS];
 
 static void disable_sd_card(void)
 {
-   // Enable the GPIO configuration clock
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
+   // Enable the SDMMC and GPIO clocks
+   WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_SDMMC1EN);
+   (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_SDMMC1EN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOEEN);
 
    // Power off the SD card and peripheral
@@ -110,22 +110,23 @@ static void disable_sd_card(void)
    // Clear the SD card initialization flag
    sd_card_state_changed = 0;
    sd_card_initialized = 0;
+   sd_result_ready = 0;
 }
 
-static void enable_sd_card(void)
+static uint8_t enable_sd_card(void)
 {
    // Enable the SDMMC and GPIO clocks
    sd_card_initialized = 1;
    LL_RCC_SetSDMMCClockSource(RCC_SDMMC1CLKSOURCE_HCLK);
-   SET_BIT(RCC->AHB5ENSR, RCC_AHB5ENR_SDMMC1EN);
+   WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_SDMMC1EN);
    (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_SDMMC1EN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOCEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOCEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOCEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOEEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOHEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOHEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOHEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIONEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIONEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIONEN);
 
    // Allow two voltage initialization attempts
@@ -149,7 +150,7 @@ static void enable_sd_card(void)
       if (READ_BIT(SDMMC1->STA, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL)))  // SD card fatal error
       {
          disable_sd_card();
-         return;
+         return 0;
       }
 
       // Check the version of the current SD card
@@ -178,7 +179,7 @@ static void enable_sd_card(void)
          {
             // SD card fatal error
             disable_sd_card();
-            return;
+            return 0;
          }
       }
 
@@ -269,7 +270,7 @@ static void enable_sd_card(void)
    {
       // SD card fatal error
       disable_sd_card();
-      return;
+      return 0;
    }
 
    // Force the SD card block size to 64 bytes
@@ -378,7 +379,7 @@ static void enable_sd_card(void)
    {
       // SD card fatal error
       disable_sd_card();
-      return;
+      return 0;
    }
 
    // Disable GPIO configuration clocks
@@ -394,24 +395,11 @@ static void enable_sd_card(void)
       {
          // SD card fatal error
          disable_sd_card();
-         return;
+         return 0;
       }
    }
    sd_card_state_changed = 0;
-}
-
-
-// Context-Switching Functions -----------------------------------------------------------------------------------------
-
-static void switch_context(void)
-{
-   // If this call returns 0, we are in the yielding task, otherwise we are in the new task
-   static volatile uint32_t current_task_context = 1;
-   if (setjmp(task_contexts[current_task_context]) == 0)
-   {
-      current_task_context = (current_task_context + 1) % NUM_TASK_CONTEXTS;
-      longjmp(task_contexts[current_task_context], 1);
-   }
+   return 1;
 }
 
 static void sd_card_write_bytes(const int8_t *data, uint32_t data_len)
@@ -516,10 +504,6 @@ static void sd_card_open_file(uint32_t audio_timestamp)
 
 static void sd_card_write_audio_file(int16_t *audio_data)
 {
-   // TODO: DELETE THIS
-   static volatile uint32_t execution_times[100] = { 0 }, exec_count = 0;
-   volatile uint32_t start_count = DWT->CYCCNT;
-
    // Only proceed while there is an open file and outstanding audio samples
    uint32_t samples_remaining = AUDIO_PACKET_NUM_SAMPLES, read_index = 0;
    while (sd_card_initialized && audio_file_open && samples_remaining)
@@ -545,10 +529,20 @@ static void sd_card_write_audio_file(int16_t *audio_data)
             sd_card_close_audio_file();
       }
    }
+}
 
-   // TODO: DELETE THIS
-   execution_times[exec_count] = (uint32_t)((uint64_t)(DWT->CYCCNT - start_count) * 1000 / SystemCoreClock);
-   exec_count = (exec_count + 1) % 100;
+
+// Context-Switching Functions -----------------------------------------------------------------------------------------
+
+static void switch_context(void)
+{
+   // If this call returns 0, we are in the yielding task, otherwise we are in the new task
+   static volatile uint32_t current_task_context = 1;
+   if (setjmp(task_contexts[current_task_context]) == 0)
+   {
+      current_task_context = (current_task_context + 1) % NUM_TASK_CONTEXTS;
+      longjmp(task_contexts[current_task_context], 1);
+   }
 }
 
 static void sd_card_async_process(void)
@@ -560,10 +554,9 @@ static void sd_card_async_process(void)
       if (sd_card_state_changed)
       {
          // Attempt to initialize or disable the SD card based on its detection status
-         if (sd_card_state_changed - 1)
+         if ((sd_card_state_changed - 1) && enable_sd_card())
          {
-            // Enable the SD card and mount its file system
-            enable_sd_card();
+            // Mount the SD card file system
             char sd_card_path[4] = { 0 };
             f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
          }
@@ -649,7 +642,7 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
       WRITE_REG(SDMMC1->ICR, (SDMMC_STATIC_CMD_FLAGS | SDMMC_STATIC_DATA_FLAGS));
       SET_BIT(SDMMC1->MASK, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL | SDMMC_IT_DTIMEOUT | SDMMC_IT_DCRCFAIL | SDMMC_IT_RXOVERR | SDMMC_IT_DATAEND));
 
-      // Send SD card command to begin reading the data blocks
+      // Send the SD card command to begin reading data blocks
       sd_result_ready = 0;
       sd_xfer_context = (count > 1) ? SDMMC_CMD_READ_MULT_BLOCK : SDMMC_CMD_READ_SINGLE_BLOCK;
       WRITE_REG(SDMMC1->ARG, sector);
@@ -689,7 +682,7 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
       WRITE_REG(SDMMC1->ICR, (SDMMC_STATIC_CMD_FLAGS | SDMMC_STATIC_DATA_FLAGS));
       SET_BIT(SDMMC1->MASK, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL | SDMMC_IT_DTIMEOUT | SDMMC_IT_DCRCFAIL | SDMMC_IT_TXUNDERR | SDMMC_IT_DATAEND));
 
-      // Send SD card command to begin writing the data blocks
+      // Send the SD card command to begin writing data blocks
       sd_result_ready = 0;
       sd_xfer_context = (count > 1) ? SDMMC_CMD_WRITE_MULT_BLOCK : SDMMC_CMD_WRITE_SINGLE_BLOCK;
       WRITE_REG(SDMMC1->ARG, sector);
@@ -813,13 +806,13 @@ void storage_init(void)
       pcm_channels[ch] = pcm[ch];
 
    // Enable the GPIO clocks
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOCEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOCEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOCEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOEEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOEEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOHEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOHEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOHEN);
-   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIONEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIONEN);
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIONEN);
 
    // Initialize the non-SDMMC GPIO pins
@@ -884,16 +877,11 @@ void storage_init(void)
    if (!tflac_validate(&flac_encoder, flac_encoder_mem, tflac_size_memory(FLAC_ENCODER_BLOCK_SIZE)))
       output_buffer_len = tflac_size_frame(FLAC_ENCODER_BLOCK_SIZE, AUDIO_NUM_ENCODED_CHANNELS, AUDIO_BITS_PER_SAMPLE);
 
-   // TODO: DELETE THIS
-   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
-   WRITE_REG(DWT->CYCCNT, 0);
-   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
-
    // Set up an independent SD card processing context for slow operations
    sd_card_command_read_index = sd_card_command_write_index = 0;
-   if (sd_card_initialized && (setjmp(task_contexts[0]) == 0))
+   if (setjmp(task_contexts[0]) == 0)
    {
-      sd_card_state_changed = 2;
+      sd_card_state_changed = READ_BIT(SD_CARD_DETECT_GPIO_Port->IDR, SD_CARD_DETECT_Pin) ? 2 : 1;
       __set_MSPLIM((uint32_t)&sd_card_context_stack);
       __set_MSP((uint32_t)&sd_card_context_stack + STORAGE_TASK_STACK_SIZE);
       sd_card_async_process();
@@ -911,7 +899,7 @@ void storage_open_audio_file(uint32_t audio_timestamp)
 {
    // Add the open-file command to the SD card command queue
    const uint32_t next_sd_card_command_write_index = (sd_card_command_write_index + 1) % MAX_NUM_SD_CARD_COMMANDS;
-   if (!audio_file_open && next_sd_card_command_write_index != sd_card_command_read_index)
+   if (sd_card_initialized && !audio_file_open && next_sd_card_command_write_index != sd_card_command_read_index)
    {
       sd_card_command_queue[sd_card_command_write_index].operation = SD_CARD_OPEN_FILE;
       sd_card_command_queue[sd_card_command_write_index].operation_data = audio_timestamp;
@@ -924,7 +912,7 @@ void storage_write_audio_file(int16_t *audio_data)
 {
    // Add the write-audio command to the SD card command queue
    const uint32_t next_sd_card_command_write_index = (sd_card_command_write_index + 1) % MAX_NUM_SD_CARD_COMMANDS;
-   if (next_sd_card_command_write_index != sd_card_command_read_index)
+   if (sd_card_initialized && (next_sd_card_command_write_index != sd_card_command_read_index))
    {
       sd_card_command_queue[sd_card_command_write_index].operation = SD_CARD_WRITE_FILE;
       sd_card_command_queue[sd_card_command_write_index].operation_data = (uint32_t)audio_data;
@@ -932,5 +920,3 @@ void storage_write_audio_file(int16_t *audio_data)
       switch_context();
    }
 }
-
-// TODO: TRY TO USE SDR25 IF RELIABLE
