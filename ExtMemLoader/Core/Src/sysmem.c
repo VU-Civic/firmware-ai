@@ -77,3 +77,8 @@ void *_sbrk(ptrdiff_t incr)
 
   return (void *)prev_heap_end;
 }
+
+__attribute__((weak)) int _read(int file, char *ptr, int len) { return len; }
+__attribute__((weak)) int _write(int file, char *ptr, int len) { return len; }
+int _close(int file) { return -1; }
+int _lseek(int file, int ptr, int dir) { return 0; }

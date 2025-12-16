@@ -30,7 +30,7 @@
         "fformat": "FORMAT_HEX",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 16.616, "write_power": 14.522 },
         "offset": { "value": "0x34064000", "magnitude":  "BYTES" },
-        "size":   { "value": "0",          "magnitude": "KBYTES" }
+        "size":   { "value": "624",        "magnitude": "KBYTES" }
       },
       {
         "fname": "AXISRAM2",
@@ -38,7 +38,7 @@
         "fformat": "FORMAT_HEX",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 17.324, "write_power": 15.321 },
         "offset": { "value": "0x34100000", "magnitude":  "BYTES" },
-        "size":   { "value": "1024",       "magnitude": "KBYTES" }
+        "size":   { "value": "0",          "magnitude": "KBYTES" }
       },
       {
         "fname": "AXISRAM3",
@@ -85,8 +85,8 @@
         "name":  "octoFlash",
         "fformat": "FORMAT_HEX",
         "prop":   { "rights": "ACC_READ",  "throughput": "MID", "latency": "HIGH", "byteWidth": 1, "freqRatio": 6.00, "cacheable": "CACHEABLE_ON", "read_power": 110, "write_power": 400.0, "constants_preferred": "true" },
-        "offset": { "value": "0x71000000", "magnitude":  "BYTES" },
-        "size":   { "value": "14",         "magnitude": "MBYTES" }
+        "offset": { "value": "0x70400000", "magnitude":  "BYTES" },
+        "size":   { "value": "28",         "magnitude": "MBYTES" }
       }
     ]
   }

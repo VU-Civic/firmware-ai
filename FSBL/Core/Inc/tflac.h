@@ -422,70 +422,43 @@ TFLAC_INLINE tflac_s32 tflac_s32_abs(tflac_s32 v) {
 TFLAC_PRIVATE
 TFLAC_INLINE
 tflac_u16 tflac_unpack_u16be(const tflac_u8* d) {
-    return (((tflac_u16)d[1])    ) |
-           (((tflac_u16)d[0])<< 8);
+    return __builtin_bswap16(*(const tflac_u16*)d);
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 tflac_u32 tflac_unpack_u32le(const tflac_u8* d) {
-    return (((tflac_u32)d[0])    ) |
-           (((tflac_u32)d[1])<< 8) |
-           (((tflac_u32)d[2])<<16) |
-           (((tflac_u32)d[3])<<24);
+    return *(const tflac_u32*)d;
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 tflac_u32 tflac_unpack_u32be(const tflac_u8* d) {
-    return (((tflac_u32)d[3])    ) |
-           (((tflac_u32)d[2])<< 8) |
-           (((tflac_u32)d[1])<<16) |
-           (((tflac_u32)d[0])<<24);
+    return __builtin_bswap32(*(const tflac_u32*)d);
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 void tflac_pack_u32le(tflac_u8* d, tflac_u32 n) {
-    d[0] = (tflac_u8)( n       );
-    d[1] = (tflac_u8)( n >> 8  );
-    d[2] = (tflac_u8)( n >> 16 );
-    d[3] = (tflac_u8)( n >> 24 );
+    *(tflac_u32*)d = n;
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 void tflac_pack_u32be(tflac_u8* d, tflac_u32 n) {
-    d[0] = (tflac_u8)( n >> 24 );
-    d[1] = (tflac_u8)( n >> 16 );
-    d[2] = (tflac_u8)( n >>  8 );
-    d[3] = (tflac_u8)( n       );
+    *(tflac_u32*)d = __builtin_bswap32(n);
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 void tflac_pack_u64le(tflac_u8* d, tflac_u64 n) {
-    d[0] = (tflac_u8)( n       );
-    d[1] = (tflac_u8)( n >> 8  );
-    d[2] = (tflac_u8)( n >> 16 );
-    d[3] = (tflac_u8)( n >> 24 );
-    d[4] = (tflac_u8)( n >> 32 );
-    d[5] = (tflac_u8)( n >> 40 );
-    d[6] = (tflac_u8)( n >> 48 );
-    d[7] = (tflac_u8)( n >> 56 );
+    *(tflac_u64*)d = n;
 }
 
 TFLAC_PRIVATE
 TFLAC_INLINE
 void tflac_pack_u64be(tflac_u8* d, tflac_u64 n) {
-    d[0] = (tflac_u8)( n >> 56 );
-    d[1] = (tflac_u8)( n >> 48 );
-    d[2] = (tflac_u8)( n >> 40 );
-    d[3] = (tflac_u8)( n >> 32 );
-    d[4] = (tflac_u8)( n >> 24 );
-    d[5] = (tflac_u8)( n >> 16 );
-    d[6] = (tflac_u8)( n >>  8 );
-    d[7] = (tflac_u8)( n       );
+    *(tflac_u64*)d = __builtin_bswap64(n);
 }
 
 typedef void (*tflac_md5_calculator)(tflac*, void* samples);
@@ -2252,7 +2225,7 @@ TFLAC_PURE TFLAC_PUBLIC tflac_u32 tflac_get_enable_md5(const tflac* t) {
     return t->enable_md5;
 }
 
-/* TODO:
+/*
  *
  *   For SUBFRAME_FIXED:
  *

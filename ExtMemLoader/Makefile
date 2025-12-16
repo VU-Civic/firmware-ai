@@ -7,7 +7,7 @@ BINARY := $(BUILD)/$(TARGET).bin
 MAP_FILE := $(BUILD)/$(TARGET).map
 SIZE_OUTPUT := default.size.stdout
 OBJDUMP_LIST := $(BUILD)/$(TARGET).list
-LINKER_FILE := STM32N647L0HXQ_extmemloader_default.ld
+LINKER_FILE := STM32N647_CivicAlert_ExtMemLoader.ld
 
 ifndef STM32_PRG_PATH
 $(error You must specify the STM32_PRG_PATH to continue)
@@ -27,8 +27,8 @@ COPY := cp
 
 DEFINES := -DUSE_HAL_DRIVER -DSTM32N647xx -DSTM32_EXTMEMLOADER_STM32CUBETARGET
 
-VPATH := ../Middlewares/ST/STM32_ExtMem_Manager ../Middlewares/ST/STM32_ExtMem_Manager/nor_sfdp ../Middlewares/ST/STM32_ExtMem_Manager/psram ../Middlewares/ST/STM32_ExtMem_Manager/sal ../Middlewares/ST/STM32_ExtMem_Manager/sdcard ../Middlewares/ST/STM32_ExtMem_Manager/user ../Middlewares/ST/STM32_ExtMem_Loader/core ../Middlewares/ST/STM32_ExtMem_Loader/MDK-ARM ../Middlewares/ST/STM32_ExtMem_Loader/STM32Cube ../Drivers/STM32N6xx_HAL_Driver/Src Core/Src
-INCLUDES := -ICore/Inc -I../Secure_nsclib -I../Drivers/STM32N6xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32N6xx/Include -I../Drivers/STM32N6xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Include -I../Middlewares/ST/STM32_ExtMem_Loader/core -I../Middlewares/ST/STM32_ExtMem_Loader/MDK-ARM -I../Middlewares/ST/STM32_ExtMem_Loader/STM32Cube -I../Middlewares/ST/STM32_ExtMem_Manager -I../Middlewares/ST/STM32_ExtMem_Manager/sal -I../Middlewares/ST/STM32_ExtMem_Manager/nor_sfdp -I../Middlewares/ST/STM32_ExtMem_Manager/psram -I../Middlewares/ST/STM32_ExtMem_Manager/sdcard -I../Middlewares/ST/STM32_ExtMem_Manager/user
+VPATH := Middlewares/ST/STM32_ExtMem_Manager Middlewares/ST/STM32_ExtMem_Manager/nor_sfdp Middlewares/ST/STM32_ExtMem_Manager/psram Middlewares/ST/STM32_ExtMem_Manager/sal Middlewares/ST/STM32_ExtMem_Manager/sdcard Middlewares/ST/STM32_ExtMem_Manager/user Middlewares/ST/STM32_ExtMem_Loader/core Middlewares/ST/STM32_ExtMem_Loader/MDK-ARM Middlewares/ST/STM32_ExtMem_Loader/STM32Cube ../Drivers/STM32N6xx_HAL_Driver/Src Core/Src
+INCLUDES := -ICore/Inc -I../Drivers/STM32N6xx_HAL_Driver/Inc -I../Drivers/STM32N6xx_HAL_Driver/Inc/Legacy -IDrivers/CMSIS/Device/ST/STM32N6xx/Include -IDrivers/CMSIS/Include -IMiddlewares/ST/STM32_ExtMem_Loader/core -IMiddlewares/ST/STM32_ExtMem_Loader/MDK-ARM -IMiddlewares/ST/STM32_ExtMem_Loader/STM32Cube -IMiddlewares/ST/STM32_ExtMem_Manager -IMiddlewares/ST/STM32_ExtMem_Manager/sal -IMiddlewares/ST/STM32_ExtMem_Manager/nor_sfdp -IMiddlewares/ST/STM32_ExtMem_Manager/psram -IMiddlewares/ST/STM32_ExtMem_Manager/sdcard -IMiddlewares/ST/STM32_ExtMem_Manager/user
 SOURCES := $(foreach SOURCE,$(foreach DIR,$(VPATH),$(wildcard $(DIR)/*.c)),$(patsubst %.c,%.c,$(notdir $(SOURCE))))
 OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o)
 

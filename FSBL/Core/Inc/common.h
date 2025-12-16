@@ -7,25 +7,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "revisions.h"
 #include "stm32n6xx_hal.h"
 
 
 // Custom Application Definitions --------------------------------------------------------------------------------------
 
-#define AUDIO_PACKET_NUM_CHANNELS            4
-#define AUDIO_PACKET_NUM_SAMPLES             8000
-#define AUDIO_PACKET_TOTAL_SAMPLES           (AUDIO_PACKET_NUM_CHANNELS * AUDIO_PACKET_NUM_SAMPLES)
-#define AUDIO_PACKET_START_DELIMITER         { 0xAE, 0xA0, 0xA2, 0xF5 }
-#define AUDIO_PACKET_END_DELIMITER           { 0xFE, 0xF0, 0xF2, 0x25 }
+#define FIRMWARE_BUILD_TIMESTAMP                      _DATETIME
 
-#define AI_NUM_CLASSES                       2
+#define AUDIO_PACKET_SAMPLE_RATE                      48000
+#define AUDIO_PACKET_NUM_CHANNELS                     1
+#define AUDIO_PACKET_NUM_SAMPLES                      8000
+#define AUDIO_PACKET_TOTAL_SAMPLES                    (AUDIO_PACKET_NUM_CHANNELS * AUDIO_PACKET_NUM_SAMPLES)
+#define AUDIO_PACKET_START_DELIMITER                  { 0xAE, 0xA0, 0xA2, 0xF5 }
+#define AUDIO_PACKET_END_DELIMITER                    { 0xFE, 0xF0, 0xF2, 0x25 }
+
+#define AI_NUM_CLASSES                                2
+
+#define STORAGE_AUDIO_CLIP_NUM_SECONDS                3
 
 #ifndef MIN
-   #define MIN(a, b)                         (((a) < (b)) ? (a) : (b))
+   #define MIN(a, b)                                  (((a) < (b)) ? (a) : (b))
 #endif
 #ifndef MAX
-   #define MAX(a, b)                         (((a) > (b)) ? (a) : (b))
+   #define MAX(a, b)                                  (((a) > (b)) ? (a) : (b))
 #endif
 
 
@@ -37,7 +43,7 @@ typedef struct
    uint16_t pin;
 } gpio_pin_t;
 
-typedef struct __attribute__ ((__packed__))
+typedef struct __attribute__ ((__packed__, aligned(4)))
 {
    uint8_t start_delimiter[4];
    int16_t audio[AUDIO_PACKET_TOTAL_SAMPLES];
@@ -49,6 +55,7 @@ typedef struct __attribute__ ((__packed__))
 
 typedef struct __attribute__ ((__packed__))
 {
+   uint32_t ai_firmware_version;
    uint8_t class_probabilities[AI_NUM_CLASSES];
 } ai_data_t;
 

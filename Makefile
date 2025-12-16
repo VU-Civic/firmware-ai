@@ -1,7 +1,7 @@
 AI_MODEL_DIR := AiModel
 AI_MODEL := $(AI_MODEL_DIR)/CivicAlert.onnx
 AI_WEIGHTS := $(AI_MODEL_DIR)/CivicAlert.hex
-AI_WEIGHTS_ADDRESS := 0x71000000
+AI_WEIGHTS_ADDRESS := 0x70400000
 LOADER := CivicAlertAiLoader.stldr
 
 WEIGHTS_GEN := stedgeai
@@ -50,19 +50,19 @@ ifeq (,$(wildcard $(STM32_PRG_PATH)/ExternalLoader/$(LOADER)))
 endif
 
 weights:
-	$(STM32_AI_PATH)/$(WEIGHTS_GEN) generate --model $(AI_MODEL) --target stm32n6 --st-neural-art civicalert@neural_art.json --name CivicAlert
-	$(OBJCOPY) -I binary st_ai_output/network_atonbuf.xSPI2.raw --change-addresses $(AI_WEIGHTS_ADDRESS) -O ihex $(AI_WEIGHTS)
-	$(COPY) st_ai_output/network.* $(AI_MODEL_DIR)
-	$(RM) st_ai_*
+	$(STM32_AI_PATH)/$(WEIGHTS_GEN) generate --model $(AI_MODEL) --st-neural-art civicalert@neural_art.json --target stm32n6 --optimize.export_hybrid True --input-data-type float32 --output-data-type float32 --name network --workspace workspace --output output
+	$(OBJCOPY) -I binary output/network_atonbuf.xSPI2.* --change-addresses $(AI_WEIGHTS_ADDRESS) -O ihex $(AI_WEIGHTS)
+	$(COPY) output/*.{h,c} $(AI_MODEL_DIR)
+	$(RM) workspace output
 	$(PRINT) "\n*** AI MODEL HAS CHANGED! FIRMWARE SHOULD BE REBUILT AND REFLASHED! ***\n"
 
 flash: checkloader
 	$(MAKE) -C FSBL flash
 
 flashw: checkloader
-	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(AI_WEIGHTS) $(AI_WEIGHTS_ADDRESS) -v
+	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(AI_WEIGHTS) -v
 
 clean:
 	$(MAKE) -C FSBL clean
 	$(MAKE) -C ExtMemLoader clean
-	$(RM) st_ai_*
+	$(RM) workspace output

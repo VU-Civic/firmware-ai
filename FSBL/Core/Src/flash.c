@@ -11,10 +11,10 @@
 #define DUMMY_CYCLES_REG_OCTAL                                  4U
 #define DUMMY_CYCLES_REG_OCTAL_DTR                              5U
 
-#define BLOCK_size_BYTES                                        (uint32_t)(64 * 1024)
-#define SECTOR_size_BYTES                                       (uint32_t)(4 * 1024)
-#define FLASH_size_BYTES                                        (uint32_t)(256*1024*1024/8)
-#define PAGE_size_BYTES                                         (uint32_t)256
+#define BLOCK_SIZE_BYTES                                        (uint32_t)(64 * 1024)
+#define SECTOR_SIZE_BYTES                                       (uint32_t)(4 * 1024)
+#define FLASH_SIZE_BYTES                                        (uint32_t)(256 * 1024 * 1024 / 8)
+#define PAGE_SIZE_BYTES                                         (uint32_t)256
 
 #define MX25UM25645G_BULK_ERASE_MAX_TIME                        150000U
 #define MX25UM25645G_BLOCK_ERASE_MAX_TIME                       2000U
@@ -22,9 +22,6 @@
 #define MX25UM25645G_WRITE_REG_MAX_TIME                         40U
 #define MX25UM25645G_RESET_MAX_TIME                             100U
 #define MX25UM25645G_AUTOPOLLING_INTERVAL_TIME                  0x10U
-
-#define MX25UM25645G_OK                                         (0)
-#define MX25UM25645G_ERROR                                      (-1)
 
 
 // SPI Command Set -----------------------------------------------------------------------------------------------------
@@ -225,14 +222,10 @@ typedef enum
 
 // Private Helper Functions --------------------------------------------------------------------------------------------
 
-static int32_t MX25UM25645G_AutoPollingMemReady(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
+static uint8_t auto_polling_mem_ready(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
 {
-   // SPI mode and DTR transfer not supported by memory
-   if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-      return MX25UM25645G_ERROR;
-
    // Configure automatic polling mode to wait for memory ready
-   XSPI_RegularCmdTypeDef s_command = {
+   const XSPI_RegularCmdTypeDef command = {
       .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
       .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
       .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
@@ -249,901 +242,240 @@ static int32_t MX25UM25645G_AutoPollingMemReady(XSPI_HandleTypeDef *ctx, MX25UM2
       .DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U,
       .DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE
    };
-
-   XSPI_AutoPollingTypeDef s_config = {
+   const XSPI_AutoPollingTypeDef config = {
       .MatchValue = 0U,
       .MatchMask = MX25UM25645G_SR_WIP,
       .MatchMode = HAL_XSPI_MATCH_MODE_AND,
       .IntervalTime = MX25UM25645G_AUTOPOLLING_INTERVAL_TIME,
       .AutomaticStop = HAL_XSPI_AUTOMATIC_STOP_ENABLE
    };
-
-   if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-      return MX25UM25645G_ERROR;
-   if (HAL_XSPI_AutoPolling(ctx, &s_config, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-      return MX25UM25645G_ERROR;
-   return MX25UM25645G_OK;
+   return (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK) &&
+          (HAL_XSPI_AutoPolling(ctx, &config, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_EnableMemoryMappedModeDTR(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode)
+static uint8_t enable_memory_mapped_mode_dtr(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode)
 {
-  // Initialize the read command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_READ_CFG;
-  s_command.InstructionMode = HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_ENABLE;
-  s_command.InstructionWidth = HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = MX25UM25645G_OCTA_READ_DTR_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_ENABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_ENABLE;
-  s_command.DummyCycles = DUMMY_CYCLES_READ_OCTAL_DTR;
-  s_command.DQSMode = HAL_XSPI_DQS_ENABLE;
+   // Send a read command
+   XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_READ_CFG,
+      .InstructionMode = HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_ENABLE,
+      .InstructionWidth = HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = MX25UM25645G_OCTA_READ_DTR_CMD,
+      .AddressMode = HAL_XSPI_ADDRESS_8_LINES,
+      .AddressDTRMode = HAL_XSPI_ADDRESS_DTR_ENABLE,
+      .AddressWidth = HAL_XSPI_ADDRESS_32_BITS,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = HAL_XSPI_DATA_8_LINES,
+      .DataDTRMode = HAL_XSPI_DATA_DTR_ENABLE,
+      .DummyCycles = DUMMY_CYCLES_READ_OCTAL_DTR,
+      .DQSMode = HAL_XSPI_DQS_ENABLE
+   };
+   if (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+      return 0;
 
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
+   // Send a program command
+   command.OperationType = HAL_XSPI_OPTYPE_WRITE_CFG;
+   command.Instruction = MX25UM25645G_OCTA_PAGE_PROG_CMD;
+   command.DummyCycles = 0U;
+   command.DQSMode = HAL_XSPI_DQS_DISABLE;
+   if (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+      return 0;
 
-  // Initialize the program command
-  s_command.OperationType = HAL_XSPI_OPTYPE_WRITE_CFG;
-  s_command.Instruction = MX25UM25645G_OCTA_PAGE_PROG_CMD;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Configure the memory mapped mode
-  XSPI_MemoryMappedTypeDef s_mem_mapped_cfg = { 0 };
-  s_mem_mapped_cfg.TimeOutActivation = HAL_XSPI_TIMEOUT_COUNTER_DISABLE;
-  if (HAL_XSPI_MemoryMapped(ctx, &s_mem_mapped_cfg) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Configure the flash for memory-mapped mode
+   const XSPI_MemoryMappedTypeDef mem_mapped_cfg = { .TimeOutActivation = HAL_XSPI_TIMEOUT_COUNTER_DISABLE };
+   return (HAL_XSPI_MemoryMapped(ctx, &mem_mapped_cfg) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_WriteEnable(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
+static uint8_t write_enable(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
 {
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
+   // Send a write enable command
+   XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
+      .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
+      .InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_ENABLE_CMD : MX25UM25645G_OCTA_WRITE_ENABLE_CMD,
+      .AddressMode = HAL_XSPI_ADDRESS_NONE,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = HAL_XSPI_DATA_NONE,
+      .DummyCycles = 0U,
+      .DQSMode = HAL_XSPI_DQS_DISABLE
+   };
+   if (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+      return 0;
 
-  // Initialize the write enable command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_ENABLE_CMD : MX25UM25645G_OCTA_WRITE_ENABLE_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Configure automatic polling mode to wait for write enabling
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_STATUS_REG_CMD : MX25UM25645G_OCTA_READ_STATUS_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 0U;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
-  s_command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  XSPI_AutoPollingTypeDef s_config = { 0 };
-  s_config.MatchValue = 2U;
-  s_config.MatchMask = 2U;
-  s_config.MatchMode = HAL_XSPI_MATCH_MODE_AND;
-  s_config.IntervalTime = MX25UM25645G_AUTOPOLLING_INTERVAL_TIME;
-  s_config.AutomaticStop = HAL_XSPI_AUTOMATIC_STOP_ENABLE;
-  if (HAL_XSPI_AutoPolling(ctx, &s_config, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Configure automatic polling mode to wait for write enabling
+   command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_STATUS_REG_CMD : MX25UM25645G_OCTA_READ_STATUS_REG_CMD;
+   command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
+   command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
+   command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
+   command.Address = 0U;
+   command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
+   command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
+   command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
+   command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
+   command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
+   if (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+      return 0;
+   const XSPI_AutoPollingTypeDef config = {
+      .MatchValue = 2U,
+      .MatchMask = 2U,
+      .MatchMode = HAL_XSPI_MATCH_MODE_AND,
+      .IntervalTime = MX25UM25645G_AUTOPOLLING_INTERVAL_TIME,
+      .AutomaticStop = HAL_XSPI_AUTOMATIC_STOP_ENABLE
+   };
+   return (HAL_XSPI_AutoPolling(ctx, &config, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_ReadCfg2Register(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint32_t read_addr, uint8_t *value)
+static uint8_t read_cfg2_register(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint32_t read_addr, uint8_t *value)
 {
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reading of status register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_CFG_REG2_CMD : MX25UM25645G_OCTA_READ_CFG_REG2_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = read_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
-  s_command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Read from configuration register 2
+   const XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
+      .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
+      .InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_CFG_REG2_CMD : MX25UM25645G_OCTA_READ_CFG_REG2_CMD,
+      .AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES,
+      .AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE,
+      .AddressWidth = HAL_XSPI_ADDRESS_32_BITS,
+      .Address = read_addr,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES,
+      .DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE,
+      .DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL),
+      .DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U,
+      .DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE
+   };
+   return (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK) &&
+          (HAL_XSPI_Receive(ctx, value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_WriteCfg2Register(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint32_t write_addr, uint8_t value)
+static uint8_t write_cfg2_register(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint32_t write_addr, uint8_t value)
 {
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the writing of configuration register 2
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_CFG_REG2_CMD : MX25UM25645G_OCTA_WRITE_CFG_REG2_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = write_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = 0U;
-  s_command.DataLength = (mode == MX25UM25645G_SPI_MODE) ? 1U : ((rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U);
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  if (HAL_XSPI_Transmit(ctx, &value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Write to configuration register 2
+   const XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
+      .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
+      .InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_CFG_REG2_CMD : MX25UM25645G_OCTA_WRITE_CFG_REG2_CMD,
+      .AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES,
+      .AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE,
+      .AddressWidth = HAL_XSPI_ADDRESS_32_BITS,
+      .Address = write_addr,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES,
+      .DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE,
+      .DummyCycles = 0U,
+      .DataLength = (mode == MX25UM25645G_SPI_MODE) ? 1U : ((rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U),
+      .DQSMode = HAL_XSPI_DQS_DISABLE
+   };
+   return (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK) &&
+          (HAL_XSPI_Transmit(ctx, &value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_ResetEnable(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
+static uint8_t reset_enable(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
 {
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reset enable command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.IOSelect =  HAL_XSPI_SELECT_IO_3_0;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_RESET_ENABLE_CMD : MX25UM25645G_OCTA_RESET_ENABLE_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Send a reset enable command
+   const XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
+      .IOSelect =  HAL_XSPI_SELECT_IO_3_0,
+      .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
+      .InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_RESET_ENABLE_CMD : MX25UM25645G_OCTA_RESET_ENABLE_CMD,
+      .AddressMode = HAL_XSPI_ADDRESS_NONE,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = HAL_XSPI_DATA_NONE,
+      .DummyCycles = 0U,
+      .DQSMode = HAL_XSPI_DQS_DISABLE
+   };
+   return (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static int32_t MX25UM25645G_ResetMemory(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
+static uint8_t reset_memory(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
 {
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reset enable command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_RESET_MEMORY_CMD : MX25UM25645G_OCTA_RESET_MEMORY_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
+   // Send a reset memory command
+   const XSPI_RegularCmdTypeDef command = {
+      .OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
+      .InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES,
+      .InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE,
+      .InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS,
+      .Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_RESET_MEMORY_CMD : MX25UM25645G_OCTA_RESET_MEMORY_CMD,
+      .AddressMode = HAL_XSPI_ADDRESS_NONE,
+      .AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE,
+      .DataMode = HAL_XSPI_DATA_NONE,
+      .DummyCycles = 0U,
+      .DQSMode = HAL_XSPI_DQS_DISABLE
+   };
+   return (HAL_XSPI_Command(ctx, &command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
-
-#ifdef FULL_FLASH_DRIVER
-
-static int32_t MX25UM25645G_ReadStatusRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t *value)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reading of status register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_STATUS_REG_CMD : MX25UM25645G_OCTA_READ_STATUS_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 0U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
-  s_command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ReadCfgRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t *value)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reading of configuration register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_CFG_REG_CMD : MX25UM25645G_OCTA_READ_CFG_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 1U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
-  s_command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ReadSTR(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_address_width_t address_width, uint8_t *data, uint32_t read_addr, uint32_t size)
-{
-  // OPI mode and 3-bytes address size not supported by memory
-  if ((mode == MX25UM25645G_OPI_MODE) && (address_width == MX25UM25645G_3BYTES_SIZE))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the read command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? ((address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_FAST_READ_CMD : MX25UM25645G_4_BYTE_ADDR_FAST_READ_CMD) : MX25UM25645G_OCTA_READ_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = (address_width == MX25UM25645G_3BYTES_SIZE) ? HAL_XSPI_ADDRESS_24_BITS : HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = read_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? DUMMY_CYCLES_READ : DUMMY_CYCLES_READ_OCTAL;
-  s_command.DataLength = size;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, data, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ReadDTR(XSPI_HandleTypeDef *ctx, uint8_t *data, uint32_t read_addr, uint32_t size)
-{
-  // Initialize the read command
-   XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_ENABLE;
-  s_command.InstructionWidth = HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = MX25UM25645G_OCTA_READ_DTR_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_ENABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = read_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_ENABLE;
-  s_command.DummyCycles = DUMMY_CYCLES_READ_OCTAL_DTR;
-  s_command.DataLength = size;
-  s_command.DQSMode = HAL_XSPI_DQS_ENABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, data, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_PageProgram(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_address_width_t address_width, uint8_t *data, uint32_t write_addr, uint32_t size)
-{
-  // OPI mode and 3-bytes address size not supported by memory
-  if ((mode == MX25UM25645G_OPI_MODE) && (address_width == MX25UM25645G_3BYTES_SIZE))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the program command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? ((address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_PAGE_PROG_CMD : MX25UM25645G_4_BYTE_PAGE_PROG_CMD) : MX25UM25645G_OCTA_PAGE_PROG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = (address_width == MX25UM25645G_3BYTES_SIZE) ? HAL_XSPI_ADDRESS_24_BITS : HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = write_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = 0U;
-  s_command.DataLength = size;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Configure the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Transmission of the data
-  if (HAL_XSPI_Transmit(ctx, data, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_PageProgramDTR(XSPI_HandleTypeDef *ctx, uint8_t *data, uint32_t write_addr, uint32_t size)
-{
-  // Initialize the program command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_ENABLE;
-  s_command.InstructionWidth = HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = MX25UM25645G_OCTA_PAGE_PROG_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_ENABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = write_addr;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_ENABLE;
-  s_command.DummyCycles = 0U;
-  s_command.DataLength = size;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Configure the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Transmission of the data
-  if (HAL_XSPI_Transmit(ctx, data, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_BlockErase(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, MX25UM25645G_address_width_t address_width, uint32_t block_address, MX25UM25645G_Erase_t block_size)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the erase command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.IOSelect = HAL_XSPI_SELECT_IO_7_0;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = (address_width == MX25UM25645G_3BYTES_SIZE) ? HAL_XSPI_ADDRESS_24_BITS : HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = block_address;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  switch (mode)
-  {
-    case MX25UM25645G_OPI_MODE:
-      s_command.Instruction = (block_size == MX25UM25645G_ERASE_64K) ? MX25UM25645G_OCTA_BLOCK_ERASE_64K_CMD : MX25UM25645G_OCTA_SECTOR_ERASE_4K_CMD;
-      break;
-    case MX25UM25645G_SPI_MODE:
-    default:
-      if (block_size == MX25UM25645G_ERASE_64K)
-        s_command.Instruction = (address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_BLOCK_ERASE_64K_CMD : MX25UM25645G_4_BYTE_BLOCK_ERASE_64K_CMD;
-      else
-        s_command.Instruction = (address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_SECTOR_ERASE_4K_CMD : MX25UM25645G_4_BYTE_SECTOR_ERASE_4K_CMD;
-      break;
-  }
-
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ChipErase(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the erase command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_BULK_ERASE_CMD : MX25UM25645G_OCTA_BULK_ERASE_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_EnableMemoryMappedModeSTR(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_address_width_t address_width)
-{
-  // OPI mode and 3-bytes address size not supported by memory
-  if ((mode == MX25UM25645G_OPI_MODE) && (address_width == MX25UM25645G_3BYTES_SIZE))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the read command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_READ_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? ((address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_FAST_READ_CMD : MX25UM25645G_4_BYTE_ADDR_FAST_READ_CMD) : MX25UM25645G_OCTA_READ_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_1_LINE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = (address_width == MX25UM25645G_3BYTES_SIZE) ? HAL_XSPI_ADDRESS_24_BITS : HAL_XSPI_ADDRESS_32_BITS;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? DUMMY_CYCLES_READ : DUMMY_CYCLES_READ_OCTAL;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the read command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Initialize the program command
-  s_command.OperationType = HAL_XSPI_OPTYPE_WRITE_CFG;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? ((address_width == MX25UM25645G_3BYTES_SIZE) ? MX25UM25645G_PAGE_PROG_CMD : MX25UM25645G_4_BYTE_PAGE_PROG_CMD) : MX25UM25645G_OCTA_PAGE_PROG_CMD;
-  s_command.DummyCycles = 0U;
-
-  // Send the write command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Configure the memory mapped mode
-  XSPI_MemoryMappedTypeDef s_mem_mapped_cfg = { 0 };
-  s_mem_mapped_cfg.TimeOutActivation = HAL_XSPI_TIMEOUT_COUNTER_DISABLE;
-  if (HAL_XSPI_MemoryMapped(ctx, &s_mem_mapped_cfg) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_Suspend(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the suspend command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_PROG_ERASE_SUSPEND_CMD : MX25UM25645G_OCTA_PROG_ERASE_SUSPEND_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_Resume(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the resume command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_PROG_ERASE_RESUME_CMD : MX25UM25645G_OCTA_PROG_ERASE_RESUME_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_WriteDisable(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the write disable command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_DISABLE_CMD : MX25UM25645G_OCTA_WRITE_DISABLE_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command */
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ReadSecurityRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t *value)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the reading of security register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_SECURITY_REG_CMD : MX25UM25645G_OCTA_READ_SECURITY_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 0U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : ((rate == MX25UM25645G_DTR_TRANSFER) ? DUMMY_CYCLES_REG_OCTAL_DTR : DUMMY_CYCLES_REG_OCTAL);
-  s_command.DataLength = (rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, value, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_Readid(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t *id)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the read id command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_READ_ID_CMD : MX25UM25645G_OCTA_READ_ID_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 0U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = (mode == MX25UM25645G_SPI_MODE) ? 0U : DUMMY_CYCLES_REG_OCTAL;
-  s_command.DataLength = 3U;
-  s_command.DQSMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DQS_ENABLE : HAL_XSPI_DQS_DISABLE;
-
-  // Configure the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-
-  // Reception of the data
-  if (HAL_XSPI_Receive(ctx, id, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_WriteStatusRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t value)
-{
-  uint8_t reg[2];
-
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // In SPI mode, the status register is configured with configuration register
-  if (mode == MX25UM25645G_SPI_MODE)
-  {
-    if (MX25UM25645G_ReadCfgRegister(ctx, mode, rate, &reg[1]) != MX25UM25645G_OK)
-      return MX25UM25645G_ERROR;
-  }
-  reg[0] = value;
-
-  // Initialize the writing of status register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_STATUS_REG_CMD : MX25UM25645G_OCTA_WRITE_STATUS_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 0U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = 0U;
-  s_command.DataLength = (mode == MX25UM25645G_SPI_MODE) ? 2U : ((rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U);
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  if (HAL_XSPI_Transmit(ctx, reg, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_WriteCfgRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t value)
-{
-  uint8_t reg[2];
-
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // In SPI mode, the configuration register is configured with status register
-  if (mode == MX25UM25645G_SPI_MODE)
-  {
-    if (MX25UM25645G_ReadStatusRegister(ctx, mode, rate, &reg[0]) != MX25UM25645G_OK)
-      return MX25UM25645G_ERROR;
-    reg[1] = value;
-  }
-  else
-    reg[0] = value;
-
-  // Initialize the writing of configuration register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_STATUS_REG_CMD : MX25UM25645G_OCTA_WRITE_STATUS_REG_CMD;
-  s_command.AddressMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_ADDRESS_NONE : HAL_XSPI_ADDRESS_8_LINES;
-  s_command.AddressDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_ADDRESS_DTR_ENABLE : HAL_XSPI_ADDRESS_DTR_DISABLE;
-  s_command.AddressWidth = HAL_XSPI_ADDRESS_32_BITS;
-  s_command.Address = 1U;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_DATA_1_LINE : HAL_XSPI_DATA_8_LINES;
-  s_command.DataDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_DATA_DTR_ENABLE : HAL_XSPI_DATA_DTR_DISABLE;
-  s_command.DummyCycles = 0U;
-  s_command.DataLength = (mode == MX25UM25645G_SPI_MODE) ? 2U : ((rate == MX25UM25645G_DTR_TRANSFER) ? 2U : 1U);
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  if (HAL_XSPI_Transmit(ctx, reg, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_WriteSecurityRegister(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate, uint8_t value)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the write of security register
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_WRITE_SECURITY_REG_CMD : MX25UM25645G_OCTA_WRITE_SECURITY_REG_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_NoOperation(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the no operation command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_NOP_CMD : MX25UM25645G_OCTA_NOP_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_EnterPowerDown(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the enter power down command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_ENTER_DEEP_POWER_DOWN_CMD : MX25UM25645G_OCTA_ENTER_DEEP_POWER_DOWN_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-static int32_t MX25UM25645G_ReleasePowerDown(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
-{
-  // SPI mode and DTR transfer not supported by memory
-  if ((mode == MX25UM25645G_SPI_MODE) && (rate == MX25UM25645G_DTR_TRANSFER))
-    return MX25UM25645G_ERROR;
-
-  // Initialize the enter power down command
-  XSPI_RegularCmdTypeDef s_command = { 0 };
-  s_command.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG;
-  s_command.InstructionMode = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_1_LINE : HAL_XSPI_INSTRUCTION_8_LINES;
-  s_command.InstructionDTRMode = (rate == MX25UM25645G_DTR_TRANSFER) ? HAL_XSPI_INSTRUCTION_DTR_ENABLE : HAL_XSPI_INSTRUCTION_DTR_DISABLE;
-  s_command.InstructionWidth = (mode == MX25UM25645G_SPI_MODE) ? HAL_XSPI_INSTRUCTION_8_BITS : HAL_XSPI_INSTRUCTION_16_BITS;
-  s_command.Instruction = (mode == MX25UM25645G_SPI_MODE) ? MX25UM25645G_RELEASE_DEEP_POWER_DOWN_CMD : MX25UM25645G_OCTA_RELEASE_DEEP_POWER_DOWN_CMD;
-  s_command.AddressMode = HAL_XSPI_ADDRESS_NONE;
-  s_command.AlternateBytesMode = HAL_XSPI_ALT_BYTES_NONE;
-  s_command.DataMode = HAL_XSPI_DATA_NONE;
-  s_command.DummyCycles = 0U;
-  s_command.DQSMode = HAL_XSPI_DQS_DISABLE;
-
-  // Send the command
-  if (HAL_XSPI_Command(ctx, &s_command, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-    return MX25UM25645G_ERROR;
-  return MX25UM25645G_OK;
-}
-
-#endif  // #ifdef FULL_FLASH_DRIVER
 
 
 // Public API Functions ------------------------------------------------------------------------------------------------
 
-void HAL_XSPI_MspInit(XSPI_HandleTypeDef* hxspi)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = { 0 };
-  if (hxspi->Instance == XSPI2)
-  {
-    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_XSPI2;
-    PeriphClkInitStruct.Xspi2ClockSelection = RCC_XSPI2CLKSOURCE_HCLK;
-    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
-      Error_Handler();
-
-    __HAL_RCC_XSPIM_CLK_ENABLE();
-    __HAL_RCC_XSPI2_CLK_ENABLE();
-    __HAL_RCC_GPION_CLK_ENABLE();
-
-    GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF9_XSPIM_P2;
-    HAL_GPIO_Init(GPION, &GPIO_InitStruct);
-  }
-}
-
 void flash_init(void)
 {
-   // Initialize the flash memory peripheral
+   // Enable the XSPIM, XSPI2, and GPIO clocks
+   LL_RCC_SetXSPIClockSource(RCC_XSPI2CLKSOURCE_HCLK);
+   SET_BIT(RCC->AHB5ENSR, RCC_AHB5ENR_XSPIMEN);
+   (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_XSPIMEN);
+   SET_BIT(RCC->AHB5ENSR, RCC_AHB5ENR_XSPI2EN);
+   (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_XSPI2EN);
+   SET_BIT(RCC->AHB4ENSR, RCC_AHB4ENR_GPIONEN);
+   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIONEN);
+
+   // Ensure all other XSPI clocks are disabled
+   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_XSPI1EN);
+   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_XSPI3EN);
+
+   // Initialize the XSPI GPIO pins
+   const uint16_t xspi_pins[] = XSPI_PINS;
+   for (uint32_t i = 0; i < (sizeof(xspi_pins) / sizeof(xspi_pins[0])); ++i)
+   {
+      const uint32_t position = 32 - __builtin_clz(xspi_pins[i]) - 1;
+      MODIFY_REG(XSPI_PORT->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+      MODIFY_REG(XSPI_PORT->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
+      MODIFY_REG(XSPI_PORT->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
+      MODIFY_REG(XSPI_PORT->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF9_XSPIM_P2 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
+      MODIFY_REG(XSPI_PORT->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
+   }
+
+   // Configure the memory type, device size, chip-select high time, clock mode, and FIFO threshold
+   MODIFY_REG(XSPI2->DCR1, (XSPI_DCR1_MTYP | XSPI_DCR1_DEVSIZE | XSPI_DCR1_CSHT | XSPI_DCR1_FRCK | XSPI_DCR1_CKMODE), (HAL_XSPI_MEMTYPE_MACRONIX | (HAL_XSPI_SIZE_256MB << XSPI_DCR1_DEVSIZE_Pos) | ((2U - 1U) << XSPI_DCR1_CSHT_Pos) | HAL_XSPI_CLOCK_MODE_0));
+   CLEAR_BIT(XSPI2->DCR2, XSPI_DCR2_WRAPSIZE);
+   CLEAR_BIT(XSPI2->DCR3, (XSPI_DCR3_CSBOUND | XSPI_DCR3_MAXTRAN));
+   CLEAR_BIT(XSPI2->DCR4, XSPI_DCR4_REFRESH);
+   MODIFY_REG(XSPI2->CR, XSPI_CR_FTHRES, ((4U - 1U) << XSPI_CR_FTHRES_Pos));
+
+   // Wait until the XSPI2 peripheral is ready
+   while (READ_BIT(XSPI2->SR, HAL_XSPI_FLAG_BUSY));
+
+   // Configure the clock prescaler to generate 50MHz and wait until calibration is complete
+   MODIFY_REG(XSPI2->DCR2, XSPI_DCR2_PRESCALER, (0x03 << XSPI_DCR2_PRESCALER_Pos));
+   while (READ_BIT(XSPI2->SR, HAL_XSPI_FLAG_BUSY));
+
+   // Configure dual-memory mode, CS selection, and sample shifting
+   CLEAR_BIT(XSPI2->CR, (XSPI_CR_DMM | XSPI_CR_CSSEL));
+   CLEAR_BIT(XSPI2->TCR, (XSPI_TCR_SSHIFT));
+
+   // Deactivate all XSPIM configurations
+   WRITE_REG(XSPIM->CR, 0x0);
+
+   // Enable the XSPI2 peripheral
+   SET_BIT(XSPI2->CR, XSPI_CR_EN);
+
+   // Disable the XSPIM and GPIO configuration clocks
+   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_XSPIMEN);
+   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIONEN);
+
+   // Use HAL just for configuring the flash
    XSPI_HandleTypeDef hxspi2 = {
      .Instance = XSPI2,
      .Init = {
-       .FifoThresholdByte = 4, // TODO: IS THIS OKAY OR DOES IT HAVE TO BE 1
+       .FifoThresholdByte = 4,
        .MemoryMode = HAL_XSPI_SINGLE_MEM,
        .MemoryType = HAL_XSPI_MEMTYPE_MACRONIX,
        .MemorySize = HAL_XSPI_SIZE_256MB,
@@ -1151,65 +483,59 @@ void flash_init(void)
        .FreeRunningClock = HAL_XSPI_FREERUNCLK_DISABLE,
        .ClockMode = HAL_XSPI_CLOCK_MODE_0,
        .WrapSize = HAL_XSPI_WRAP_NOT_SUPPORTED,
-       .ClockPrescaler = 0x03,  // TODO: WHY 0x03 AND NOT 0
+       .ClockPrescaler = 0x03,
        .SampleShifting = HAL_XSPI_SAMPLE_SHIFT_NONE,
        .DelayHoldQuarterCycle = HAL_XSPI_DHQC_ENABLE,
        .ChipSelectBoundary = HAL_XSPI_BONDARYOF_NONE,
        .MaxTran = 0,
        .Refresh = 0,
        .MemorySelect = HAL_XSPI_CSSEL_NCS1
-     }
+     },
+     .State = HAL_XSPI_STATE_READY
    };
-   if (HAL_XSPI_Init(&hxspi2) != HAL_OK)
-     Error_Handler();
-
-   // Configure the OctoSPI peripheral to use direct mapping for the flash
-   XSPIM_CfgTypeDef sXspiManagerCfg = {
-     .nCSOverride = HAL_XSPI_CSSEL_OVR_NCS1,
-     .IOPort = HAL_XSPIM_IOPORT_2,
-     .Req2AckTime = 1
-   };
-   if (HAL_XSPIM_Config(&hxspi2, &sXspiManagerCfg, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
-     Error_Handler();
 
    // Reset the flash memory to its default configuration (STR SPI mode)
-   if ((MX25UM25645G_ResetEnable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ResetMemory(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ResetEnable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ResetMemory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ResetEnable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ResetMemory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) != MX25UM25645G_OK))
+   if (!reset_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
+       !reset_enable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) ||
+       !reset_enable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER))
      Error_Handler();
 
    // Wait until the memory becomes available again
    HAL_Delay(100U);
-   if (MX25UM25645G_AutoPollingMemReady(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK)
+   if (!auto_polling_mem_ready(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER))
      Error_Handler();
 
    // Configure the flash memory to operate in DTR OPI mode
-   if ((MX25UM25645G_WriteEnable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_WriteCfg2Register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG3_ADDR, MX25UM25645G_CR2_DC_20_CYCLES) != MX25UM25645G_OK) ||
-       (MX25UM25645G_WriteEnable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_WriteCfg2Register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, MX25UM25645G_CR2_DOPI) != MX25UM25645G_OK))
+   if (!write_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
+       !write_cfg2_register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG3_ADDR, MX25UM25645G_CR2_DC_20_CYCLES) ||
+       !write_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
+       !write_cfg2_register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, MX25UM25645G_CR2_DOPI))
      Error_Handler();
 
-   // Wait for the configuration to take effect and re-initialize the peripheral
+   // Wait for the configuration to take effect then re-initialize the peripheral to operate at 200MHz
    HAL_Delay(40U);
-   if (HAL_XSPI_Init(&hxspi2) != HAL_OK)
-     Error_Handler();
+   MODIFY_REG(XSPI2->DCR1, (XSPI_DCR1_MTYP | XSPI_DCR1_DEVSIZE | XSPI_DCR1_CSHT | XSPI_DCR1_FRCK | XSPI_DCR1_CKMODE), (HAL_XSPI_MEMTYPE_MACRONIX | (HAL_XSPI_SIZE_256MB << XSPI_DCR1_DEVSIZE_Pos) | ((2U - 1U) << XSPI_DCR1_CSHT_Pos) | HAL_XSPI_CLOCK_MODE_0));
+   CLEAR_BIT(XSPI2->DCR2, XSPI_DCR2_WRAPSIZE);
+   CLEAR_BIT(XSPI2->DCR3, (XSPI_DCR3_CSBOUND | XSPI_DCR3_MAXTRAN));
+   CLEAR_BIT(XSPI2->DCR4, XSPI_DCR4_REFRESH);
+   while (READ_BIT(XSPI2->SR, HAL_XSPI_FLAG_BUSY));
+   CLEAR_BIT(XSPI2->DCR2, XSPI_DCR2_PRESCALER);
+   while (READ_BIT(XSPI2->SR, HAL_XSPI_FLAG_BUSY));
+   CLEAR_BIT(XSPI2->CR, (XSPI_CR_DMM | XSPI_CR_CSSEL));
+   CLEAR_BIT(XSPI2->TCR, (XSPI_TCR_SSHIFT));
+   SET_BIT(XSPI2->CR, XSPI_CR_EN);
 
    // Wait until the memory becomes available again
    uint8_t reg[2];
-   if ((MX25UM25645G_AutoPollingMemReady(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) != MX25UM25645G_OK) ||
-       (MX25UM25645G_ReadCfg2Register(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, reg) != MX25UM25645G_OK) ||
+   if (!auto_polling_mem_ready(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) ||
+       !read_cfg2_register(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, reg) ||
        (reg[0] != MX25UM25645G_CR2_DOPI))
      Error_Handler();
 
-   // Reconfigure the clock to operate at full speed (200MHz)
-   HAL_XSPI_SetClockPrescaler(&hxspi2, 0);
-
-   // Map the flash memory to internal address 0x70000000 and disable prefetch (TODO: disabled due to errata - test and see if needed here - also test and see the effect on inferrence time)
-   if (MX25UM25645G_EnableMemoryMappedModeDTR(&hxspi2, MX25UM25645G_OPI_MODE) != MX25UM25645G_OK)
+   // Map the flash memory to internal address 0x70000000
+   if (!enable_memory_mapped_mode_dtr(&hxspi2, MX25UM25645G_OPI_MODE))
      Error_Handler();
+
+   // Disable data prefetching (due to errata)
    MODIFY_REG(XSPI2->CR, XSPI_CR_NOPREF, HAL_XSPI_AUTOMATIC_PREFETCH_DISABLE);
 }

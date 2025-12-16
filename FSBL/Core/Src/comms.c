@@ -10,12 +10,13 @@
 
 // GPS Static Variables ------------------------------------------------------------------------------------------------
 
-__attribute__ ((section (".noncacheable")))
-static DMA_NodeTypeDef from_host_spi_dma_nodes[2];
+__attribute__ ((section (".noncacheable"), aligned (4)))
+static DMA_NodeTypeDef from_host_spi_dma_nodes[1];
 
-__attribute__ ((section (".noncacheable"), aligned (32)))
+__attribute__ ((section (".noncacheable"), aligned (4)))
 static uint8_t spi_buffer[2*sizeof(audio_packet_t)];
 
+__attribute__ ((section (".noncacheable")))
 static volatile uint8_t *incoming_data = 0;
 
 
@@ -33,7 +34,7 @@ static void spi_dma_setup(void)
    WRITE_REG(GPDMA1_Channel0->CBR1, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CBR1_DEFAULT_OFFSET]);
    WRITE_REG(GPDMA1_Channel0->CLLR, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET]);
    WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT | DMA_FLAG_DTE | DMA_FLAG_SUSP));
-   SET_BIT(GPDMA1_Channel0->CCR, (DMA_IT_TC | DMA_IT_DTE | DMA_IT_SUSP | DMA_CCR_EN));
+   SET_BIT(GPDMA1_Channel0->CCR, (DMA_IT_TC | DMA_FLAG_HT | DMA_IT_DTE | DMA_IT_SUSP | DMA_CCR_EN));
 }
 
 static void i2c_dma_setup(void)
@@ -52,11 +53,11 @@ void GPDMA1_Channel0_IRQHandler(void)
 {
    // Check if a full data packet transfer has completed
    static const uint8_t packet_delimiter[] = AUDIO_PACKET_START_DELIMITER;
-   if (READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC))
+   if (READ_BIT(GPDMA1_Channel0->CSR, (DMA_FLAG_TC | DMA_FLAG_HT)))
    {
-      // Clear the flag and update the pointer to the current incoming data
-      WRITE_REG(GPDMA1_Channel0->CFCR, DMA_FLAG_TC);
-      incoming_data = (GPDMA1_Channel0->CLLR == ((uint32_t)&from_host_spi_dma_nodes[0] & DMA_CLLR_LA)) ? &spi_buffer[sizeof(spi_buffer) / 2] : &spi_buffer[0];
+      // Update the pointer to the current incoming data and clear the transfer-complete flag
+      incoming_data = READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC) ? &spi_buffer[sizeof(spi_buffer) / 2] : &spi_buffer[0];
+      WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
 
       // Validate the packet delimiter and trigger automatic re-initialization if there is an error
       if ((incoming_data[0] != packet_delimiter[0]) || (incoming_data[1] != packet_delimiter[1]) || (incoming_data[2] != packet_delimiter[2]) || (incoming_data[3] != packet_delimiter[3]))
@@ -173,12 +174,16 @@ static void from_host_spi_init(void)
    // Configure the SPI CS pin to interrupt upon de-assertion
    position = 32 - __builtin_clz(DATA_IN_CS_Pin) - 1;
    uint32_t iocurrent = DATA_IN_CS_Pin & (1UL << position);
-   MODIFY_REG(EXTI->EXTICR[position >> 2U], (0x0FUL << ((position & 0x03U) * EXTI_EXTICR1_EXTI1_Pos)), (0UL << (4U * (position & 0x03U))));
+   MODIFY_REG(EXTI->EXTICR[position >> 2U], (0x0FUL << ((position & 0x03U) * EXTI_EXTICR1_EXTI1_Pos)), (0x00UL << ((position & 0x03U) * EXTI_EXTICR1_EXTI1_Pos)));
    SET_BIT(EXTI->IMR1, iocurrent);
    CLEAR_BIT(EXTI->EMR1, iocurrent);
    SET_BIT(EXTI->RTSR1, iocurrent);
    CLEAR_BIT(EXTI->FTSR1, iocurrent);
    *(&EXTI->SECCFGR1 + (0x08U * ((EXTI_LINE_15 & EXTI_REG_MASK) >> EXTI_REG_SHIFT))) |= (1UL << (EXTI_LINE_15 & EXTI_PIN_MASK));
+
+   // Disable the GPIO configuration clocks
+   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOAEN);
+   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOBEN);
 
    // Enable secure access for the SPI DMA registers
    const uint32_t channel_idx = 1UL << 0;
@@ -186,16 +191,13 @@ static void from_host_spi_init(void)
    SET_BIT(GPDMA1->SECCFGR, channel_idx);
 
    // Set up a DMA linked list to continually receive in a circular buffer
-   for (uint32_t i = 0; i < 2; ++i)
-   {
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CTR1_DEFAULT_OFFSET] = DMA_DINC_INCREMENTED | DMA_DEST_DATAWIDTH_WORD | DMA_SINC_FIXED | DMA_SRC_DATAWIDTH_WORD | DMA_CTR1_SSEC | DMA_CTR1_DSEC | DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CTR2_DEFAULT_OFFSET] = DMA_TCEM_EACH_LL_ITEM_TRANSFER | GPDMA1_REQUEST_SPI1_RX | DMA_NORMAL;
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CBR1_DEFAULT_OFFSET] = sizeof(spi_buffer) / 2;
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CSAR_DEFAULT_OFFSET] = (uint32_t)&SPI1->RXDR;
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CDAR_DEFAULT_OFFSET] = (uint32_t)((i == 0) ? &spi_buffer[0] : &spi_buffer[sizeof(spi_buffer) / 2]);
-      from_host_spi_dma_nodes[i].LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET] = ((uint32_t)&from_host_spi_dma_nodes[(i + 1) % 2] & DMA_CLLR_LA) | DMA_CLLR_UT1 | DMA_CLLR_UT2 | DMA_CLLR_UB1 | DMA_CLLR_UDA | DMA_CLLR_USA | DMA_CLLR_ULL;
-      from_host_spi_dma_nodes[i].NodeInfo = DMA_GPDMA_LINEAR_NODE | (NODE_CLLR_LINEAR_DEFAULT_OFFSET << NODE_CLLR_IDX_POS);
-   }
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR1_DEFAULT_OFFSET] = DMA_DINC_INCREMENTED | DMA_DEST_DATAWIDTH_WORD | DMA_SINC_FIXED | DMA_SRC_DATAWIDTH_WORD | DMA_CTR1_SSEC | DMA_CTR1_DSEC | DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR2_DEFAULT_OFFSET] = DMA_TCEM_EACH_LL_ITEM_TRANSFER | GPDMA1_REQUEST_SPI1_RX | DMA_NORMAL;
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CBR1_DEFAULT_OFFSET] = sizeof(spi_buffer);
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CSAR_DEFAULT_OFFSET] = (uint32_t)&SPI1->RXDR;
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CDAR_DEFAULT_OFFSET] = (uint32_t)&spi_buffer[0];
+   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET] = ((uint32_t)&from_host_spi_dma_nodes[0] & DMA_CLLR_LA) | DMA_CLLR_UT1 | DMA_CLLR_UT2 | DMA_CLLR_UB1 | DMA_CLLR_UDA | DMA_CLLR_USA | DMA_CLLR_ULL;
+   from_host_spi_dma_nodes[0].NodeInfo = DMA_GPDMA_LINEAR_NODE | (NODE_CLLR_LINEAR_DEFAULT_OFFSET << NODE_CLLR_IDX_POS);
 
    // Reset the SPI DMA peripheral
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
@@ -210,9 +212,9 @@ static void from_host_spi_init(void)
    CLEAR_BIT(SPI1->I2SCFGR, SPI_I2SCFGR_I2SMOD);
 
    // Enable all necessary DMA and SPI CS de-assertion interrupts
-   NVIC_SetPriority(GPDMA1_Channel0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(GPDMA1_Channel0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
    NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
-   NVIC_SetPriority(EXTI15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(EXTI15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
    NVIC_EnableIRQ(EXTI15_IRQn);
 }
 
@@ -227,6 +229,9 @@ static void to_host_i2c_init(void)
    SET_BIT(RCC->AHB1ENSR, RCC_AHB1ENR_GPDMA1EN);
    (void)READ_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPDMA1EN);
 
+   // Set the initial de-asserted state for the AI-to-host wakeup pin
+   WRITE_REG(HOST_WAKEUP_GPIO_Port->BRR, HOST_WAKEUP_Pin);
+
    // Initialize the I2C GPIO pins
    uint32_t position = 32 - __builtin_clz(DATA_OUT_SCL_Pin) - 1;
    MODIFY_REG(DATA_OUT_SCL_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
@@ -240,6 +245,14 @@ static void to_host_i2c_init(void)
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF4_I2C3 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_OD & GPIO_MODE) << (position * 2U)));
+   position = 32 - __builtin_clz(HOST_WAKEUP_Pin) - 1;
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_LOW << (position * 2U)));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_OUTPUT_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_OUTPUT_PP & GPIO_MODE) << (position * 2U)));
+
+   // Disable the GPIO configuration clocks
+   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOAEN);
 
    // Enable secure access for the I2C DMA registers
    const uint32_t channel_idx = 1UL << 1;
@@ -261,11 +274,11 @@ static void to_host_i2c_init(void)
    SET_BIT(I2C3->CR1, I2C_CR1_PE);
 
    // Enable all necessary DMA and I2C interrupts
-   NVIC_SetPriority(GPDMA1_Channel1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(GPDMA1_Channel1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
    NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
-   NVIC_SetPriority(I2C3_EV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(I2C3_EV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
    NVIC_EnableIRQ(I2C3_EV_IRQn);
-   NVIC_SetPriority(I2C3_ER_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(I2C3_ER_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
    NVIC_EnableIRQ(I2C3_ER_IRQn);
 }
 
@@ -296,10 +309,10 @@ void comms_transmit(uint8_t *data, uint8_t data_len)
    }
 }
 
-volatile uint8_t* comms_incoming_data(void)
+volatile audio_packet_t* comms_incoming_data(void)
 {
    // Return incoming data and reset the pointer for the next packet
-  volatile uint8_t *data = incoming_data;
-  incoming_data = 0;
-  return data;
+   volatile audio_packet_t *data = (volatile audio_packet_t*)incoming_data;
+   incoming_data = 0;
+   return data;
 }

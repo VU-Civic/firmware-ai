@@ -4,5 +4,8 @@
 #include "common.h"
 
 void storage_init(void);
+void storage_handle_sd_card_state_change(void);
+void storage_open_audio_file(uint32_t audio_timestamp);
+void storage_write_audio_file(int16_t *audio_data);
 
 #endif  // #ifndef __STORAGE_HEADER_H__
