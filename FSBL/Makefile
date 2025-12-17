@@ -50,7 +50,7 @@ CMSIS_DSP_SOURCES := arm_common_tables.c arm_const_structs.c arm_mve_tables.c ar
 VPATH += Drivers/CMSIS_DSP/Source/BasicMathFunctions Drivers/CMSIS_DSP/Source/ComplexMathFunctions Drivers/CMSIS_DSP/Source/CommonTables Drivers/CMSIS_DSP/Source/FastMathFunctions Drivers/CMSIS_DSP/Source/StatisticsFunctions Drivers/CMSIS_DSP/Source/SupportFunctions Drivers/CMSIS_DSP/Source/TransformFunctions Drivers/CMSIS_DSP/Source/WindowFunctions
 OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o) $(CMSIS_DSP_SOURCES:%.c=$(BUILD)/%.o) $(BUILD)/startup_stm32n647l0hxq_fsbl.o
 
-CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -ffunction-sections -fdata-sections -falign-functions=16 -Wall -fstack-usage -mcmse -MMD -MP
+CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -fno-omit-frame-pointer -ffunction-sections -fdata-sections -falign-functions=16 -Wall -Wextra -fstack-usage -mcmse -MMD -MP
 CFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb
 LFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) --specs=nosys.specs -Wl,-Map=$(MAP_FILE) -Wl,--gc-sections -static -Wl,--cmse-implib -Wl,--out-implib=$(BUILD)/secure_nsclib.o
 LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -Wl,--start-group -lc -lm -Wl,--end-group

@@ -564,6 +564,30 @@ void system_finalize(void)
 {
    // Disable SysTick interrupts
    CLEAR_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
+
+   // Enable the DWT cycle counter to use for timeouts
+   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
+   WRITE_REG(DWT->CYCCNT, 0);
+   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
+
+   // TODO: Enable an independent watchdog that resets if not fed within 1 second
+   /*WRITE_REG(IWDG->KR, IWDG_KEY_ENABLE);
+   WRITE_REG(IWDG->KR, IWDG_KEY_WRITE_ACCESS_ENABLE);
+   WRITE_REG(IWDG->PR, IWDG_PRESCALER_32);
+   WRITE_REG(IWDG->RLR, 1000);
+   while (READ_BIT(IWDG->SR, IWDG_SR_RVU));
+   WRITE_REG(IWDG->ICR, IWDG_ICR_EWIC);
+   WRITE_REG(IWDG->EWCR, 0U);
+   while (READ_BIT(IWDG->SR, (IWDG_SR_EWU | IWDG_SR_WVU | IWDG_SR_RVU | IWDG_SR_PVU)));*/
+
+#if REV_ID < REV_C
+
+   // Illuminate the MCU status LED
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_GPIOBEN);
+   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_GPIOBEN);
+   WRITE_REG(LED_MCU_STATUS_GPIO_Port->BSRR, LED_MCU_STATUS_Pin);
+
+#endif  // #if REV_ID < REV_C
 }
 
 void system_sleep(void)
@@ -574,22 +598,10 @@ void system_sleep(void)
    __ISB();
 }
 
-uint32_t system_start_execution_timer(void)
+void system_feed_watchdog(void)
 {
-   // Enable and start the DWT cycle counter
-   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
-   WRITE_REG(DWT->CYCCNT, 0);
-   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
-   return DWT->CYCCNT;
-}
-
-uint32_t system_get_execution_time_ms(uint32_t start_count)
-{
-   // Compute the number of milliseconds elapsed using the DWT cycle counter
-   const uint32_t execution_time = (uint32_t)((uint64_t)(DWT->CYCCNT - start_count) * 1000 / SystemCoreClock);
-   CLEAR_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
-   CLEAR_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
-   return execution_time;
+   // Reset the independent watchdog timer
+   WRITE_REG(IWDG->KR, IWDG_KEY_RELOAD);
 }
 
 void system_delay(uint32_t ms)

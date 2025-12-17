@@ -222,6 +222,8 @@ typedef enum
 
 // Private Helper Functions --------------------------------------------------------------------------------------------
 
+extern void UsageFault_Handler(void);
+
 static uint8_t auto_polling_mem_ready(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode, MX25UM25645G_Transfer_t rate)
 {
    // Configure automatic polling mode to wait for memory ready
@@ -498,19 +500,19 @@ void flash_init(void)
    if (!reset_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
        !reset_enable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_STR_TRANSFER) ||
        !reset_enable(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) || !reset_memory(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER))
-     Error_Handler();
+      UsageFault_Handler();
 
    // Wait until the memory becomes available again
    HAL_Delay(100U);
    if (!auto_polling_mem_ready(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER))
-     Error_Handler();
+      UsageFault_Handler();
 
    // Configure the flash memory to operate in DTR OPI mode
    if (!write_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
        !write_cfg2_register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG3_ADDR, MX25UM25645G_CR2_DC_20_CYCLES) ||
        !write_enable(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER) ||
        !write_cfg2_register(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, MX25UM25645G_CR2_DOPI))
-     Error_Handler();
+      UsageFault_Handler();
 
    // Wait for the configuration to take effect then re-initialize the peripheral to operate at 200MHz
    HAL_Delay(40U);
@@ -530,11 +532,11 @@ void flash_init(void)
    if (!auto_polling_mem_ready(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER) ||
        !read_cfg2_register(&hxspi2, MX25UM25645G_OPI_MODE, MX25UM25645G_DTR_TRANSFER, MX25UM25645G_CR2_REG1_ADDR, reg) ||
        (reg[0] != MX25UM25645G_CR2_DOPI))
-     Error_Handler();
+      UsageFault_Handler();
 
    // Map the flash memory to internal address 0x70000000
    if (!enable_memory_mapped_mode_dtr(&hxspi2, MX25UM25645G_OPI_MODE))
-     Error_Handler();
+      UsageFault_Handler();
 
    // Disable data prefetching (due to errata)
    MODIFY_REG(XSPI2->CR, XSPI_CR_NOPREF, HAL_XSPI_AUTOMATIC_PREFETCH_DISABLE);

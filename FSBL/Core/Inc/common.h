@@ -24,8 +24,12 @@
 #define AUDIO_PACKET_END_DELIMITER                    { 0xFE, 0xF0, 0xF2, 0x25 }
 
 #define AI_NUM_CLASSES                                2
+#define AI_GUNSHOT_CLASS_INDEX                        0
+#define AI_STORAGE_THRESHOLD                          0.2f
 
-#define STORAGE_AUDIO_CLIP_NUM_SECONDS                3
+#define STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS            3
+
+#define USE_SETJMP_FOR_SD_STORAGE                     0
 
 #ifndef MIN
    #define MIN(a, b)                                  (((a) < (b)) ? (a) : (b))
@@ -62,7 +66,6 @@ typedef struct __attribute__ ((__packed__))
 
 // Global Function Prototypes ------------------------------------------------------------------------------------------
 
-void Error_Handler(void);
 void sd_card_detection_isr(uint8_t sd_card_detected);
 void comms_spi_cs_isr(void);
 

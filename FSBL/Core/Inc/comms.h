@@ -6,5 +6,6 @@
 void comms_init(void);
 void comms_transmit(uint8_t *data, uint8_t data_len);
 volatile audio_packet_t* comms_incoming_data(void);
+uint32_t comms_cycles_since_data_received(void);
 
 #endif  // #ifndef __COMMS_HEADER_H__

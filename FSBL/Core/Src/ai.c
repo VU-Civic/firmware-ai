@@ -3,7 +3,9 @@
 #include <arm_math.h>
 #include "ai.h"
 #include "ll_aton_runtime.h"
+#include "mcu_cache.h"
 #include "npu_cache.h"
+#include "system.h"
 
 
 // AI Network and Inference Definitions --------------------------------------------------------------------------------
@@ -242,9 +244,6 @@ void ai_init(void)
    // Initialize the AI runtime
    LL_ATON_RT_RuntimeInit();
    LL_ATON_RT_Init_Network(&NN_Instance_CivicAlert);
-   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk); // TODO: DELETE THIS
-   WRITE_REG(DWT->CYCCNT, 0);
-   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
 
    // Disable the NPU and its cache
    WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_CACHEAXIEN);
@@ -253,9 +252,6 @@ void ai_init(void)
 
 void ai_process(volatile audio_packet_t *packet, uint8_t *output)
 {
-   static volatile uint32_t execution_times[100] = { 0 }, exec_count = 0;
-   volatile uint32_t start_count = DWT->CYCCNT;
-
    // Set up all necessary AI processing buffers
    static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE] = { 0 };
    static float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS] = { 0 };
@@ -344,10 +340,8 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
       output[i] = (uint8_t)((out_float > 100.0f) ? 100.0f : ((out_float < 0.0f) ? 0.0f : out_float));
    }
 
-   // Disable the NPU and its cache
+   // Disable the NPU and its cache and feed the watchdog
    WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_CACHEAXIEN);
    WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_NPUEN);
-
-   execution_times[exec_count] = (uint32_t)((uint64_t)(DWT->CYCCNT - start_count) * 1000 / SystemCoreClock);
-   exec_count = (exec_count + 1) % 100;
+   system_feed_watchdog();
 }

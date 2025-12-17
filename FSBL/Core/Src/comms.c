@@ -8,7 +8,7 @@
 #define I2C_DEVICE_ADDRESS                144
 
 
-// GPS Static Variables ------------------------------------------------------------------------------------------------
+// Static Variables for Host Communications ----------------------------------------------------------------------------
 
 __attribute__ ((section (".noncacheable"), aligned (4)))
 static DMA_NodeTypeDef from_host_spi_dma_nodes[1];
@@ -18,6 +18,9 @@ static uint8_t spi_buffer[2*sizeof(audio_packet_t)];
 
 __attribute__ ((section (".noncacheable")))
 static volatile uint8_t *incoming_data = 0;
+
+__attribute__ ((section (".noncacheable")))
+static volatile uint32_t data_receive_time;
 
 
 // Private Helper Functions --------------------------------------------------------------------------------------------
@@ -313,6 +316,13 @@ volatile audio_packet_t* comms_incoming_data(void)
 {
    // Return incoming data and reset the pointer for the next packet
    volatile audio_packet_t *data = (volatile audio_packet_t*)incoming_data;
+   // TODO: Place this in ISR after we figure out why it's getting called twice quickly and then not again for twice the expected time
+   if (data) data_receive_time = DWT->CYCCNT;
    incoming_data = 0;
    return data;
+}
+
+uint32_t comms_cycles_since_data_received(void)
+{
+   return DWT->CYCCNT - data_receive_time;
 }

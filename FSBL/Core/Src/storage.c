@@ -5,6 +5,7 @@
 
 #include <arm_math.h>
 #include <setjmp.h>
+#include "comms.h"
 #include "ff.h"
 #include "diskio.h"
 #include "storage.h"
@@ -20,7 +21,7 @@
 #define FLAC_ENCODER_PARTITION_ORDER          3
 #define FLAC_ENCODER_BLOCK_SIZE               4096
 
-#define AUDIO_CLIP_NUM_SAMPLES                (STORAGE_AUDIO_CLIP_NUM_SECONDS * AUDIO_PACKET_SAMPLE_RATE)
+#define AUDIO_CLIP_MIN_NUM_SAMPLES            (STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS * AUDIO_PACKET_SAMPLE_RATE)
 #define SD_CARD_BUFFER_NUM_BYTES              16384
 
 #define NUM_TASK_CONTEXTS                     2
@@ -28,7 +29,7 @@
 #define MAX_NUM_SD_CARD_COMMANDS              8
 
 #define SDMMC_CLK                             200000000U
-#define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR25_SWITCH_PATTERN
+#define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR50_SWITCH_PATTERN
 
 typedef struct
 {
@@ -53,17 +54,22 @@ typedef struct {
 
 static volatile uint8_t audio_file_open;
 static volatile DSTATUS sd_card_status = STA_NOINIT;
-static volatile uint32_t sd_xfer_context, sd_result_ready;
-static volatile uint32_t sd_card_command_read_index, sd_card_command_write_index;
+static volatile uint32_t sd_xfer_context, sd_result_ready, sd_timed_out;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
-static sd_card_command_t sd_card_command_queue[MAX_NUM_SD_CARD_COMMANDS];
-static uint8_t sd_card_context_stack[STORAGE_TASK_STACK_SIZE];
 static uint32_t pcm_write_index, output_buffer_len, sd_write_index;
-static uint32_t samples_written, bytes_written;
-static jmp_buf task_contexts[NUM_TASK_CONTEXTS];
+static uint32_t samples_written, bytes_written, timeout_num_cycles;
 static sd_card_details_t sd_card_details;
 static int8_t output_buffer[8219];
 static tflac flac_encoder;
+
+#if USE_SETJMP_FOR_SD_STORAGE > 0
+
+static volatile uint32_t sd_card_command_read_index, sd_card_command_write_index;
+static sd_card_command_t sd_card_command_queue[MAX_NUM_SD_CARD_COMMANDS];
+static uint8_t sd_card_context_stack[STORAGE_TASK_STACK_SIZE];
+static jmp_buf task_contexts[NUM_TASK_CONTEXTS];
+
+#endif
 
 __attribute__ ((section(".noncacheable")))
 static FATFS file_system;
@@ -444,8 +450,8 @@ static void sd_card_close_audio_file(void)
 
       // Finalize the FLAC stream
       tflac_finalize(&flac_encoder);
-      f_lseek(&audio_file, 4);
       tflac_encode_streaminfo(&flac_encoder, 1, output_buffer, output_buffer_len, &bytes_written);
+      f_lseek(&audio_file, 4);
       f_write(&audio_file, output_buffer, bytes_written, &data_written);
 
       // Close the audio file
@@ -456,16 +462,23 @@ static void sd_card_close_audio_file(void)
 
 static void sd_card_open_file(uint32_t audio_timestamp)
 {
-   // Do not continue if there is already an audio file open
-   if (!sd_card_initialized || audio_file_open)
+   // Do not continue if the SD card is not initialized
+   if (!sd_card_initialized)
       return;
+
+   // Extend the length of an existing audio file if already open
+   if (audio_file_open)
+   {
+      samples_written = 0;
+      return;
+   }
 
    // Determine if time to create a new storage directory
    const time_t timestamp = (time_t)audio_timestamp;
    struct tm *curr_time = gmtime(&timestamp);
    static uint32_t audio_directory_timestamp = 0;
    static char time_string[10] = { 0 }, audio_directory[14] = { 0 };
-   strftime(time_string, sizeof(time_string), "%H-%M-%S", curr_time);
+   strftime(time_string, sizeof(time_string), "%H%M%S", curr_time);
    if ((audio_timestamp - audio_directory_timestamp) >= 3600)
    {
       // Generate a new directory name from the current date and time
@@ -483,7 +496,7 @@ static void sd_card_open_file(uint32_t audio_timestamp)
 
    // Open the requested file
    static char file_name[32] = { 0 };
-   snprintf(file_name, sizeof(file_name), "%s/%s.fla", audio_directory, time_string);
+   snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
 
    // Initialize a new FLAC encoder
@@ -525,7 +538,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
          sd_card_write_bytes(output_buffer, bytes_written);
 
          // Determine whether the full audio clip has been written
-         if (samples_written >= AUDIO_CLIP_NUM_SAMPLES)
+         if (samples_written >= AUDIO_CLIP_MIN_NUM_SAMPLES)
             sd_card_close_audio_file();
       }
    }
@@ -536,6 +549,8 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 
 static void switch_context(void)
 {
+#if USE_SETJMP_FOR_SD_STORAGE > 0
+
    // If this call returns 0, we are in the yielding task, otherwise we are in the new task
    static volatile uint32_t current_task_context = 1;
    if (setjmp(task_contexts[current_task_context]) == 0)
@@ -543,7 +558,17 @@ static void switch_context(void)
       current_task_context = (current_task_context + 1) % NUM_TASK_CONTEXTS;
       longjmp(task_contexts[current_task_context], 1);
    }
+
+#else
+
+   // Ensure that we time out before the next data packet arrives
+   if (comms_cycles_since_data_received() >= timeout_num_cycles)
+      sd_timed_out = 1;
+
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
 }
+
+#if USE_SETJMP_FOR_SD_STORAGE > 0
 
 static void sd_card_async_process(void)
 {
@@ -590,6 +615,8 @@ static void sd_card_async_process(void)
    }
 }
 
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
+
 
 // FatFS Required Driver Functions -------------------------------------------------------------------------------------
 
@@ -628,7 +655,7 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
 
    // Try to read up to two times to account for potential CRC errors
    sd_rx_cplt = 0;
-   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_rx_cplt && (attempt < 2); ++attempt)
+   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_timed_out && !sd_rx_cplt && (attempt < 2); ++attempt)
    {
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
@@ -649,7 +676,7 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
       MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (sd_xfer_context | SDMMC_CMD_CMDTRANS | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
 
       // Context switch until a response is received or the SD card changes state
-      while (!sd_result_ready && !sd_card_state_changed)
+      while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
          switch_context();
       sd_result_ready = 0;
    }
@@ -668,7 +695,7 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
 
    // Try to write up to two times to account for potential CRC errors
    sd_tx_cplt = 0;
-   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_tx_cplt && (attempt < 2); ++attempt)
+   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_timed_out && !sd_tx_cplt && (attempt < 2); ++attempt)
    {
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
@@ -689,7 +716,7 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
       MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (sd_xfer_context | SDMMC_CMD_CMDTRANS | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
 
       // Context switch until a response is received or the SD card changes state
-      while (!sd_result_ready && !sd_card_state_changed)
+      while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
          switch_context();
       sd_result_ready = 0;
    }
@@ -802,6 +829,7 @@ void storage_init(void)
    // Initialize all static variables
    sd_card_status = STA_NOINIT;
    output_buffer_len = audio_file_open = 0;
+   timeout_num_cycles = SystemCoreClock * AUDIO_PACKET_NUM_SAMPLES / AUDIO_PACKET_SAMPLE_RATE;
    for (uint32_t ch = 0; ch < AUDIO_NUM_ENCODED_CHANNELS; ++ch)
       pcm_channels[ch] = pcm[ch];
 
@@ -872,10 +900,10 @@ void storage_init(void)
    flac_encoder.blocksize = FLAC_ENCODER_BLOCK_SIZE;
    flac_encoder.max_partition_order = FLAC_ENCODER_PARTITION_ORDER;
    flac_encoder.enable_md5 = 0;
-   tflac_set_constant_subframe(&flac_encoder, 1);
-   tflac_set_fixed_subframe(&flac_encoder, 1);
    if (!tflac_validate(&flac_encoder, flac_encoder_mem, tflac_size_memory(FLAC_ENCODER_BLOCK_SIZE)))
       output_buffer_len = tflac_size_frame(FLAC_ENCODER_BLOCK_SIZE, AUDIO_NUM_ENCODED_CHANNELS, AUDIO_BITS_PER_SAMPLE);
+
+#if USE_SETJMP_FOR_SD_STORAGE > 0
 
    // Set up an independent SD card processing context for slow operations
    sd_card_command_read_index = sd_card_command_write_index = 0;
@@ -886,17 +914,53 @@ void storage_init(void)
       __set_MSP((uint32_t)&sd_card_context_stack + STORAGE_TASK_STACK_SIZE);
       sd_card_async_process();
    }
+
+#else
+
+   // Attempt to initialize the SD card
+   if (enable_sd_card())
+   {
+      // Mount the SD card file system
+      char sd_card_path[4] = { 0 };
+      f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+   }
+   else
+      disable_sd_card();
+
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
 }
 
 void storage_handle_sd_card_state_change(void)
 {
+#if USE_SETJMP_FOR_SD_STORAGE > 0
+
    // Switch to the SD card task if a pending task has completed or the card state has changed
    if (sd_result_ready || sd_card_state_changed)
       switch_context();
+
+#else
+
+   // Check whether an SD card state change has occurred
+   if (sd_card_state_changed)
+   {
+      // Attempt to initialize or disable the SD card based on its detection status
+      if ((sd_card_state_changed - 1) && enable_sd_card())
+      {
+         // Mount the SD card file system
+         char sd_card_path[4] = { 0 };
+         f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+      }
+      else
+         disable_sd_card();
+   }
+
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
 }
 
 void storage_open_audio_file(uint32_t audio_timestamp)
 {
+#if USE_SETJMP_FOR_SD_STORAGE > 0
+
    // Add the open-file command to the SD card command queue
    const uint32_t next_sd_card_command_write_index = (sd_card_command_write_index + 1) % MAX_NUM_SD_CARD_COMMANDS;
    if (sd_card_initialized && !audio_file_open && next_sd_card_command_write_index != sd_card_command_read_index)
@@ -906,10 +970,20 @@ void storage_open_audio_file(uint32_t audio_timestamp)
       sd_card_command_write_index = next_sd_card_command_write_index;
       switch_context();
    }
+
+#else
+
+   // Open a new file on the SD card
+   sd_timed_out = 0;
+   sd_card_open_file(audio_timestamp);
+
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
 }
 
-void storage_write_audio_file(int16_t *audio_data)
+void storage_write_audio_file(volatile int16_t *audio_data)
 {
+#if USE_SETJMP_FOR_SD_STORAGE > 0
+
    // Add the write-audio command to the SD card command queue
    const uint32_t next_sd_card_command_write_index = (sd_card_command_write_index + 1) % MAX_NUM_SD_CARD_COMMANDS;
    if (sd_card_initialized && (next_sd_card_command_write_index != sd_card_command_read_index))
@@ -919,4 +993,12 @@ void storage_write_audio_file(int16_t *audio_data)
       sd_card_command_write_index = next_sd_card_command_write_index;
       switch_context();
    }
+
+#else
+
+   // Write the audio data to a currently open file
+   sd_timed_out = 0;
+   sd_card_write_audio_file((int16_t*)audio_data);
+
+#endif  // #if USE_SETJMP_FOR_SD_STORAGE > 0
 }

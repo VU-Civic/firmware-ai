@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    network.h
   * @author  STEdgeAI
-  * @date    2025-10-03 11:11:32
+  * @date    2025-12-16 17:23:37
   * @brief   Minimal description of the generated c-implemention of the network
   ******************************************************************************
   * @attention
@@ -15,27 +15,27 @@
   * If no LICENSE file comes with this software, it is provided AS-IS.
   ******************************************************************************
   */
-#ifndef LL_ATON_DEFAULT_H
-#define LL_ATON_DEFAULT_H
+#ifndef LL_ATON_CIVICALERT_H
+#define LL_ATON_CIVICALERT_H
 
 /******************************************************************************/
-#define LL_ATON_DEFAULT_C_MODEL_NAME        "Default"
-#define LL_ATON_DEFAULT_ORIGIN_MODEL_NAME   "CivicAlert"
+#define LL_ATON_CIVICALERT_C_MODEL_NAME        "CivicAlert"
+#define LL_ATON_CIVICALERT_ORIGIN_MODEL_NAME   "CivicAlert"
 
 /************************** USER ALLOCATED IOs ********************************/
 // No user allocated inputs
 // No user allocated outputs
 
 /************************** INPUTS ********************************************/
-#define LL_ATON_DEFAULT_IN_NUM        (1)    // Total number of input buffers
+#define LL_ATON_CIVICALERT_IN_NUM        (1)    // Total number of input buffers
 // Input buffer 1 -- Input_0_out_0
-#define LL_ATON_DEFAULT_IN_1_ALIGNMENT   (32)
-#define LL_ATON_DEFAULT_IN_1_SIZE_BYTES  (6144)
+#define LL_ATON_CIVICALERT_IN_1_ALIGNMENT   (32)
+#define LL_ATON_CIVICALERT_IN_1_SIZE_BYTES  (200704)
 
 /************************** OUTPUTS *******************************************/
-#define LL_ATON_DEFAULT_OUT_NUM        (1)    // Total number of output buffers
-// Output buffer 1 -- Softmax_100_out_0
-#define LL_ATON_DEFAULT_OUT_1_ALIGNMENT   (32)
-#define LL_ATON_DEFAULT_OUT_1_SIZE_BYTES  (40)
+#define LL_ATON_CIVICALERT_OUT_NUM        (1)    // Total number of output buffers
+// Output buffer 1 -- Dequantize_108_out_0
+#define LL_ATON_CIVICALERT_OUT_1_ALIGNMENT   (32)
+#define LL_ATON_CIVICALERT_OUT_1_SIZE_BYTES  (8)
 
-#endif /* LL_ATON_DEFAULT_H */
+#endif /* LL_ATON_CIVICALERT_H */
