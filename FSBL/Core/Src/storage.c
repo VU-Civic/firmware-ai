@@ -829,7 +829,7 @@ void storage_init(void)
    // Initialize all static variables
    sd_card_status = STA_NOINIT;
    output_buffer_len = audio_file_open = 0;
-   timeout_num_cycles = SystemCoreClock * AUDIO_PACKET_NUM_SAMPLES / AUDIO_PACKET_SAMPLE_RATE;
+   timeout_num_cycles = ((SystemCoreClock + AUDIO_PACKET_SAMPLE_RATE) / AUDIO_PACKET_SAMPLE_RATE) * AUDIO_PACKET_NUM_SAMPLES;
    for (uint32_t ch = 0; ch < AUDIO_NUM_ENCODED_CHANNELS; ++ch)
       pcm_channels[ch] = pcm[ch];
 
