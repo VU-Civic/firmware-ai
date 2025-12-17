@@ -177,8 +177,8 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
 void ai_init(void)
 {
    // Power on and enable all AXISRAM memory banks and the NPU cache  // TODO: CAN ANY AXISRAM BANKS NOT BE ENABLED (NOT USED IN AI)
-   //WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_CRCEN);  // TODO: DO I NEED TO ENABLE THE CRC CLOCK
-   //(void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_CRCEN);
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_CRCEN);
+   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_CRCEN);
    WRITE_REG(RCC->AHB2ENSR, RCC_AHB2ENR_RAMCFGEN);
    (void)READ_BIT(RCC->AHB2ENR, RCC_AHB2ENR_RAMCFGEN);
    CLEAR_BIT(RAMCFG_SRAM2_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
@@ -334,9 +334,11 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
 
    // Invalidate the output cache and process the classification output
    LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_out, data_out_end - data_out);
+   max_value = (data_out[0] > data_out[1]) ? data_out[0] : data_out[1];
+   const float sum_exp = expf(data_out[0] - max_value) + expf(data_out[1] - max_value);
    for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
    {
-      const float out_float = 100.0f * data_out[i];
+      const float out_float = data_out[i] / sum_exp;
       output[i] = (uint8_t)((out_float > 100.0f) ? 100.0f : ((out_float < 0.0f) ? 0.0f : out_float));
    }
 
