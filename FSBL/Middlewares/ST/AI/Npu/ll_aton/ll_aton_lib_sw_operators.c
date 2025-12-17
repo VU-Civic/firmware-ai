@@ -120,7 +120,7 @@ typedef const struct
 
 static inline int32_t __ll_aton_lib_is_in_slice(const __ll_slice_params_t *common_params, __ll_stack_lnklst_t *elem)
 {
-  uint32_t index = elem->index;
+  int32_t index = (int32_t)elem->index;
   uint32_t axis = elem->axis;
 
   uint8_t slice_forwards = (common_params->slice_steps[axis] < 0) ? 0 : 1;
@@ -346,7 +346,7 @@ static int __ll_aton_lib_sw_outputs_flat_copy(const LL_LIB_TensorShape_TypeDef *
   }
 
   unsigned char *curr_in_addr = ATON_LIB_PHYSICAL_TO_VIRTUAL_ADDR(LL_Buffer_addr_start(input));
-  for (int i = 0; i < nr_of_outputs; i++)
+  for (unsigned i = 0; i < nr_of_outputs; i++)
   {
     unsigned char *out_addr = ATON_LIB_PHYSICAL_TO_VIRTUAL_ADDR(LL_Buffer_addr_start((*outputs) + i));
     unsigned out_size = LL_Buffer_len((*outputs) + i);
@@ -454,7 +454,7 @@ static void __ll_aton_lib_split_channel_batched(const LL_LIB_TensorShape_TypeDef
   // assuming that all leading dimensions up to channel are equal to 1!
 
   unsigned char *outer_addr = ATON_LIB_PHYSICAL_TO_VIRTUAL_ADDR(LL_Buffer_addr_start(input));
-  for (int i = 0; i < nr_of_outputs; i++)
+  for (uint32_t i = 0; i < nr_of_outputs; i++)
   {
     uint16_t out_batch = (*outputs)[i].batch;
     uint32_t batch_depth_bytes = out_batch * nbytes;
@@ -469,18 +469,18 @@ static void __ll_aton_lib_split_channel_batched(const LL_LIB_TensorShape_TypeDef
 
     /* main loop */
     unsigned char *addr_main_loop = outer_addr;
-    for (int j = 0; j < frame_tot_cnt; j++)
+    for (uint32_t j = 0; j < frame_tot_cnt; j++)
     {
       /* repetition loop (just a single iteration => removed) */
       unsigned char *repetition_addr = addr_main_loop;
 
       /* line loop */
       unsigned char *line_addr = repetition_addr;
-      for (int x = 0; x < fheight; x++)
+      for (uint32_t x = 0; x < fheight; x++)
       {
         /* batch loop */
         unsigned char *batch_addr = line_addr;
-        for (int y = 0; y < fwidth; y++)
+        for (uint32_t y = 0; y < fwidth; y++)
         {
           memcpy(output_addr, batch_addr, batch_depth_bytes);
 
@@ -1448,7 +1448,7 @@ static void __ll_aton_lib_pad_reflect_sw(uint32_t curr_axis, __ll_pad_sw_params_
   }
   else
   {
-    for (int i = 0; i < common_params->min_shape[curr_axis]; i++)
+    for (uint32_t i = 0; i < common_params->min_shape[curr_axis]; i++)
     {
       __ll_aton_lib_pad_reflect_sw(curr_axis + 1, common_params, fill);
     }
@@ -1654,7 +1654,7 @@ static void __ll_aton_lib_pad_edge_sw(uint32_t curr_axis, __ll_pad_sw_params_t *
   }
   else
   {
-    for (int i = 0; i < common_params->min_shape[curr_axis]; i++)
+    for (uint32_t i = 0; i < common_params->min_shape[curr_axis]; i++)
     {
       __ll_aton_lib_pad_edge_sw(curr_axis + 1, common_params, fill);
     }

@@ -1925,7 +1925,7 @@ int LL_Activacc_Init(int id, const LL_Activacc_InitTypeDef *conf)
     {
       uint8_t *R0p = (uint8_t *)conf->ROM0_vector.p;
       unsigned ROM0_rows = conf->ROM0_nbytes / (1 * 1);
-      for (int i = 0; i < ROM0_rows; i++)
+      for (unsigned i = 0; i < ROM0_rows; i++)
       {
         t = ATON_ACTIV_ROM0_DT;
         t = ATON_ACTIV_ROM0_SET_ENTRY(t, R0p[i]);
@@ -1935,7 +1935,7 @@ int LL_Activacc_Init(int id, const LL_Activacc_InitTypeDef *conf)
     {
       uint16_t *R1p = (uint16_t *)conf->ROM1_vector.p;
       unsigned ROM1_rows = conf->ROM1_nbytes / (3 * 2);
-      for (int i = 0; i < ROM1_rows; i++)
+      for (unsigned i = 0; i < ROM1_rows; i++)
       {
         t = ATON_ACTIV_ROM1_AB_DT;
         t = ATON_ACTIV_ROM1_AB_SET_A(t, R1p[3 * i + 0]);

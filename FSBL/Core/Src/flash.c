@@ -255,7 +255,7 @@ static uint8_t auto_polling_mem_ready(XSPI_HandleTypeDef *ctx, MX25UM25645G_Inte
           (HAL_XSPI_AutoPolling(ctx, &config, HAL_XSPI_TIMEOUT_DEFAULT_VALUE) == HAL_OK);
 }
 
-static uint8_t enable_memory_mapped_mode_dtr(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t mode)
+static uint8_t enable_memory_mapped_mode_dtr(XSPI_HandleTypeDef *ctx, MX25UM25645G_Interface_t)
 {
    // Send a read command
    XSPI_RegularCmdTypeDef command = {

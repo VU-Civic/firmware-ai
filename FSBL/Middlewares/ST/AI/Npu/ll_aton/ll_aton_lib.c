@@ -1231,7 +1231,7 @@ static void __LL_ATON_LIB_DMA_Inputs_Batched_Memcpy(const LL_LIB_TensorInfo_Type
   uint32_t in_nkernels = inputs[0].shape[(in_ndims - 4) + TDIM_NKERNELS];
   uint32_t out_nchannels = 0;
   uint32_t in_bytes_size = in_fwidth * in_fheight * in_nchannels * in_nkernels * nbytes;
-  int i;
+  unsigned int i;
 
   for (i = 0; i < ninputs; i++)
     out_nchannels += inputs[i].shape[(in_ndims - 4) + TDIM_NCHANNELS];
@@ -1340,7 +1340,7 @@ static void __LL_ATON_LIB_DMA_Outputs_Channel_Split_Aton(const LL_LIB_TensorShap
   uint32_t out_nchannels = outputs[0].shape[(out_ndims - 4) + TDIM_ONNX_NCHANNELS];
 
   uint32_t in_nchannels = 0;
-  int i;
+  unsigned int i;
 
   for (i = 0; i < noutputs; i++)
     in_nchannels += outputs[i].shape[(out_ndims - 4) + 1 /* ONNX_CHANNEL_OFFSET */];
@@ -1459,7 +1459,7 @@ static void __LL_ATON_LIB_DMA_Outputs_Channel_Split_Batched(const LL_LIB_TensorS
   uint32_t out_nchannels = outputs[0].shape[(out_ndims - 4) + TDIM_ONNX_NCHANNELS];
 
   uint32_t in_nchannels = 0;
-  int i;
+  unsigned int i;
 
   uint16_t out_batch = outputs[0].batch;
 
@@ -1993,7 +1993,8 @@ int LL_ATON_LIB_DMA_Transpose(const LL_LIB_TensorShape_TypeDef *input, const uin
 int LL_ATON_LIB_Concat(const LL_Buffer_InfoTypeDef *inputs, unsigned int ninputs, const LL_Buffer_InfoTypeDef *output,
                        unsigned int axis, int dma_in, int dma_out)
 {
-  int i, k;
+  unsigned int i;
+  int k;
 
   // LL_ATON_PRINTF("Concat ------ axis=%d\n", axis);
   if (ninputs == 0)
@@ -2610,9 +2611,9 @@ static int LL_ATON_LIB_Softmax_float(const LL_LIB_TensorInfo_TypeDef *input, con
   int outer_elem = 1, inner_elem = 1;
   int axis_elem = input->shape[axis];
 
-  for (int i = 0; i < axis; i++)
+  for (unsigned int i = 0; i < axis; i++)
     outer_elem *= input->shape[i];
-  for (int i = axis + 1; i < input->ndims; i++)
+  for (unsigned int i = axis + 1; i < input->ndims; i++)
     inner_elem *= input->shape[i];
 
   // LL_ATON_PRINTF("outer_elem=%d inner_eleme=%d axis_elem=%d\n", outer_elem, inner_elem, axis_elem);
@@ -2675,9 +2676,9 @@ static int LL_ATON_LIB_Softmax_INT8(const LL_LIB_TensorInfo_TypeDef *input, cons
   int outer_elem = 1, inner_elem = 1;
   int axis_elem = input->shape[axis];
 
-  for (int i = 0; i < axis; i++)
+  for (unsigned int i = 0; i < axis; i++)
     outer_elem *= input->shape[i];
-  for (int i = axis + 1; i < input->ndims; i++)
+  for (unsigned int i = axis + 1; i < input->ndims; i++)
     inner_elem *= input->shape[i];
 
   double scalein = (double)input->scale[0];
@@ -2758,7 +2759,7 @@ static int LL_ATON_LIB_Softmax_float_legacy(const LL_LIB_TensorInfo_TypeDef *inp
   // this function must assume shape to be described as an BCHW for the purpose of computing the softmax
   // while actual memory storage is BHWC
   // note that ndim MUST be always >= 4 when invoking the function (for dims < 4 must be adding extra dimensions = 1)
-  int start_dim = input->ndims - 4;
+  unsigned int start_dim = input->ndims - 4;
   // int in_batches = input->shape[start_dim + TDIM_NKERNELS];
   int in_fwidth = input->shape[start_dim + TDIM_FWIDTH];
   int in_fheight = input->shape[start_dim + TDIM_FHEIGHT];
@@ -2852,7 +2853,7 @@ static int LL_ATON_LIB_Softmax_float_legacy(const LL_LIB_TensorInfo_TypeDef *inp
 static int LL_ATON_LIB_Softmax_INT8_legacy(const LL_LIB_TensorInfo_TypeDef *input,
                                            const LL_LIB_TensorInfo_TypeDef *output, unsigned int axis)
 {
-  int start_dim = input->ndims - 4;
+  unsigned int start_dim = input->ndims - 4;
   int in_fwidth = input->shape[start_dim + TDIM_FWIDTH];
   int in_fheight = input->shape[start_dim + TDIM_FHEIGHT];
   int in_nchannels = input->shape[start_dim + TDIM_NCHANNELS];
@@ -3264,7 +3265,7 @@ static inline void __ll_lib_load_const_val(void **dst, int32_t constant_value, s
   case 1:
   { // 8-bit
     int8_t **_dst = (int8_t **)dst;
-    int i = 0;
+    size_t i = 0;
     for (; i < size; i++)
     {
       **_dst = (int8_t)constant_value;
@@ -3275,7 +3276,7 @@ static inline void __ll_lib_load_const_val(void **dst, int32_t constant_value, s
   case 2:
   { // 16-bit
     int16_t **_dst = (int16_t **)dst;
-    int i = 0;
+    size_t i = 0;
     for (; i < size; i += 2)
     {
       **_dst = (int16_t)constant_value;
@@ -3286,7 +3287,7 @@ static inline void __ll_lib_load_const_val(void **dst, int32_t constant_value, s
   case 3:
   { // 24-bit
     int8_t **_dst = (int8_t **)dst;
-    for (int i = 0; i < size; i += 3)
+    for (size_t i = 0; i < size; i += 3)
     {
       **_dst = constant_value & 0xFF;
       (*_dst)++;
@@ -3300,7 +3301,7 @@ static inline void __ll_lib_load_const_val(void **dst, int32_t constant_value, s
   case 4:
   { // 32-bit
     int32_t **_dst = (int32_t **)dst;
-    int i = 0;
+    size_t i = 0;
     for (; i < size; i += 4)
     {
       **_dst = (int32_t)constant_value;

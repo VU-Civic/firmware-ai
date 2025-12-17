@@ -158,7 +158,7 @@ int LL_LIB_TENSOR_ELEMENTS(const LL_LIB_TensorInfo_TypeDef *t);
     LL_Streng_TensorInitTypeDef g_dma_out;
 
     /* Generic fields common at least for two cases */
-    int g_idx;
+    unsigned int g_idx;
     int g_size;
 
     unsigned char *g_dst_o_src;
