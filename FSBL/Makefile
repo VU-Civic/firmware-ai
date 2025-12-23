@@ -25,7 +25,7 @@ $(error You must specify the STM32_PRG_PATH to continue)
 endif
 
 ifndef BOARD_REV
-$(error You must specify a BOARD_REV to continue)
+$(error You must specify a BOARD_REV (A, B, etc) to continue)
 endif
 
 CPU := cortex-m55
@@ -60,11 +60,11 @@ LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -Wl,--star
 
 all: CFLAGS += -Ofast
 all: directories $(EXECUTABLE) secondary-outputs
-	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED)
+	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s
 
 debug: CFLAGS += -g3 -DDEBUG -O0
 debug: directories $(EXECUTABLE) secondary-outputs
-	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED)
+	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s
 
 directories: $(BUILD)
 

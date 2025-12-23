@@ -54,6 +54,7 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
    double timestamp;
    float lat, lon, ht;
    int32_t q1, q2, q3;
+   uint8_t reserved[8];
    uint8_t end_delimiter[4];
 } audio_packet_t;
 

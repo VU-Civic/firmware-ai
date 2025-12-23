@@ -438,7 +438,7 @@ void flash_init(void)
    for (uint32_t i = 0; i < (sizeof(xspi_pins) / sizeof(xspi_pins[0])); ++i)
    {
       const uint32_t position = 32 - __builtin_clz(xspi_pins[i]) - 1;
-      MODIFY_REG(XSPI_PORT->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+      MODIFY_REG(XSPI_PORT->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_HIGH << (position * 2U)));
       MODIFY_REG(XSPI_PORT->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
       MODIFY_REG(XSPI_PORT->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
       MODIFY_REG(XSPI_PORT->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF9_XSPIM_P2 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));

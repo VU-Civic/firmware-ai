@@ -333,7 +333,7 @@ void system_init(void)
    // Set the interrupt group priority
    NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
-   // Enable the BSEC and SYSCFG peripherals
+   // Enable the BSEC, SYSCFG, and CRC peripherals
    WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_BSECEN);
    (void)READ_BIT(RCC->APB4ENR2, RCC_APB4ENR2_BSECEN);
    WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_SYSCFGEN);
@@ -544,6 +544,9 @@ void system_init(void)
    WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOOEN);
    WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOPEN);
 
+   // Disable unused AHBSRAM and BKPSRAM
+   WRITE_REG(RCC->MEMENCR, (LL_MEM_AHBSRAM1 | LL_MEM_AHBSRAM2 | LL_MEM_BKPSRAM));
+
    // Enable the instruction and data caches
    SET_BIT(MEMSYSCTL->MSCR, (MEMSYSCTL_MSCR_DCACTIVE_Msk | MEMSYSCTL_MSCR_ICACTIVE_Msk));
    SCB_EnableICache();
@@ -571,6 +574,7 @@ void system_finalize(void)
    SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
 
    // TODO: Enable an independent watchdog that resets if not fed within 1 second
+   SET_BIT(DBGMCU->APB4FZ1, DBGMCU_APB4FZ1_DBG_IWDG_STOP);
    /*WRITE_REG(IWDG->KR, IWDG_KEY_ENABLE);
    WRITE_REG(IWDG->KR, IWDG_KEY_WRITE_ACCESS_ENABLE);
    WRITE_REG(IWDG->PR, IWDG_PRESCALER_32);

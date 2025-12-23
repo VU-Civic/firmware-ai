@@ -887,9 +887,9 @@ void storage_init(void)
    }
 
    // Enable interrupts based on the SD_CARD_DETECT pin
-   NVIC_SetPriority(EXTI12_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
+   NVIC_SetPriority(EXTI12_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
    NVIC_EnableIRQ(EXTI12_IRQn);
-   NVIC_SetPriority(SDMMC1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_SetPriority(SDMMC1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
    NVIC_EnableIRQ(SDMMC1_IRQn);
 
    // Initialize the FLAC encoder

@@ -61,6 +61,7 @@ void GPDMA1_Channel0_IRQHandler(void)
       // Update the pointer to the current incoming data and clear the transfer-complete flag
       incoming_data = READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC) ? &spi_buffer[sizeof(spi_buffer) / 2] : &spi_buffer[0];
       WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
+      data_receive_time = DWT->CYCCNT;
 
       // Validate the packet delimiter and trigger automatic re-initialization if there is an error
       if ((incoming_data[0] != packet_delimiter[0]) || (incoming_data[1] != packet_delimiter[1]) || (incoming_data[2] != packet_delimiter[2]) || (incoming_data[3] != packet_delimiter[3]))
@@ -150,25 +151,25 @@ static void from_host_spi_init(void)
 
    // Initialize the SPI GPIO pins
    uint32_t position = 32 - __builtin_clz(DATA_IN_CS_Pin) - 1;
-   MODIFY_REG(DATA_IN_CS_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+   MODIFY_REG(DATA_IN_CS_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF5_SPI1 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(DATA_IN_SCK_Pin) - 1;
-   MODIFY_REG(DATA_IN_SCK_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+   MODIFY_REG(DATA_IN_SCK_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
    MODIFY_REG(DATA_IN_SCK_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(DATA_IN_SCK_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
    MODIFY_REG(DATA_IN_SCK_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF5_SPI1 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_IN_SCK_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(DATA_IN_MOSI_Pin) - 1;
-   MODIFY_REG(DATA_IN_MOSI_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+   MODIFY_REG(DATA_IN_MOSI_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
    MODIFY_REG(DATA_IN_MOSI_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(DATA_IN_MOSI_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
    MODIFY_REG(DATA_IN_MOSI_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF5_SPI1 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_IN_MOSI_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(DATA_IN_MISO_Pin) - 1;
-   MODIFY_REG(DATA_IN_MISO_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_VERY_HIGH << (position * 2U)));
+   MODIFY_REG(DATA_IN_MISO_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
    MODIFY_REG(DATA_IN_MISO_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(DATA_IN_MISO_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
    MODIFY_REG(DATA_IN_MISO_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF5_SPI1 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
@@ -215,9 +216,9 @@ static void from_host_spi_init(void)
    CLEAR_BIT(SPI1->I2SCFGR, SPI_I2SCFGR_I2SMOD);
 
    // Enable all necessary DMA and SPI CS de-assertion interrupts
-   NVIC_SetPriority(GPDMA1_Channel0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
+   NVIC_SetPriority(GPDMA1_Channel0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
    NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
-   NVIC_SetPriority(EXTI15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
+   NVIC_SetPriority(EXTI15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
    NVIC_EnableIRQ(EXTI15_IRQn);
 }
 
@@ -277,11 +278,11 @@ static void to_host_i2c_init(void)
    SET_BIT(I2C3->CR1, I2C_CR1_PE);
 
    // Enable all necessary DMA and I2C interrupts
-   NVIC_SetPriority(GPDMA1_Channel1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+   NVIC_SetPriority(GPDMA1_Channel1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
    NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
-   NVIC_SetPriority(I2C3_EV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+   NVIC_SetPriority(I2C3_EV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
    NVIC_EnableIRQ(I2C3_EV_IRQn);
-   NVIC_SetPriority(I2C3_ER_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+   NVIC_SetPriority(I2C3_ER_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
    NVIC_EnableIRQ(I2C3_ER_IRQn);
 }
 
@@ -316,8 +317,6 @@ volatile audio_packet_t* comms_incoming_data(void)
 {
    // Return incoming data and reset the pointer for the next packet
    volatile audio_packet_t *data = (volatile audio_packet_t*)incoming_data;
-   // TODO: Place this in ISR after we figure out why it's getting called twice quickly and then not again for twice the expected time
-   if (data) data_receive_time = DWT->CYCCNT;
    incoming_data = 0;
    return data;
 }

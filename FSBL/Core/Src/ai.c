@@ -60,7 +60,8 @@ typedef struct {
 // Static AI Network Variables -----------------------------------------------------------------------------------------
 
 LL_ATON_DECLARE_NAMED_NN_INSTANCE_AND_INTERFACE(CivicAlert)
-static float *data_in, *data_out, *data_in_end, *data_out_end;
+static float *data_in, *data_out;
+static int32_t data_in_len, data_out_len;
 static float hanning_window[AI_FFT_WINDOW_SIZE];
 static arm_rfft_fast_instance_f32 fft;
 static mel_filterbank_t mel;
@@ -176,29 +177,6 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
 
 void ai_init(void)
 {
-   // Power on and enable all AXISRAM memory banks and the NPU cache  // TODO: CAN ANY AXISRAM BANKS NOT BE ENABLED (NOT USED IN AI)
-   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_CRCEN);
-   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_CRCEN);
-   WRITE_REG(RCC->AHB2ENSR, RCC_AHB2ENR_RAMCFGEN);
-   (void)READ_BIT(RCC->AHB2ENR, RCC_AHB2ENR_RAMCFGEN);
-   CLEAR_BIT(RAMCFG_SRAM2_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
-   CLEAR_BIT(RAMCFG_SRAM3_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
-   CLEAR_BIT(RAMCFG_SRAM4_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
-   CLEAR_BIT(RAMCFG_SRAM5_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
-   CLEAR_BIT(RAMCFG_SRAM6_AXI->CR, (RAMCFG_AXISRAM_POWERDOWN | RAMCFG_CR_ALE));
-   CLEAR_BIT(RAMCFG_SRAM2_AXI->IER, RAMCFG_IT_ALL);
-   CLEAR_BIT(RAMCFG_SRAM3_AXI->IER, RAMCFG_IT_ALL);
-   CLEAR_BIT(RAMCFG_SRAM4_AXI->IER, RAMCFG_IT_ALL);
-   CLEAR_BIT(RAMCFG_SRAM5_AXI->IER, RAMCFG_IT_ALL);
-   CLEAR_BIT(RAMCFG_SRAM6_AXI->IER, RAMCFG_IT_ALL);
-   SET_BIT(RAMCFG_SRAM2_AXI->ICR, RAMCFG_FLAGS_ALL);
-   SET_BIT(RAMCFG_SRAM3_AXI->ICR, RAMCFG_FLAGS_ALL);
-   SET_BIT(RAMCFG_SRAM4_AXI->ICR, RAMCFG_FLAGS_ALL);
-   SET_BIT(RAMCFG_SRAM5_AXI->ICR, RAMCFG_FLAGS_ALL);
-   SET_BIT(RAMCFG_SRAM6_AXI->ICR, RAMCFG_FLAGS_ALL);
-   WRITE_REG(RCC->MEMENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
-   (void)READ_BIT(RCC->MEMENR, RCC_MEMENR_CACHEAXIRAMEN);
-
    // Enable the NPU clock and reset the NPU peripheral
    WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_NPUEN);
    (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_NPUEN);
@@ -212,21 +190,34 @@ void ai_init(void)
    WRITE_REG(RCC->AHB5RSTCR, RCC_AHB5ENR_CACHEAXIEN);
    npu_cache_init();
 
-   // Keep all IPs enabled during WFE so they can wake up the CPU (TODO: DO WE NEED THIS)
-   LL_BUS_EnableClockLowPower(~0);
-   LL_MEM_EnableClockLowPower(~0);
-   LL_AHB1_GRP1_EnableClockLowPower(~0);
-   LL_AHB2_GRP1_EnableClockLowPower(~0);
-   LL_AHB3_GRP1_EnableClockLowPower(~0);
-   LL_AHB4_GRP1_EnableClockLowPower(~0);
-   LL_AHB5_GRP1_EnableClockLowPower(~0);
-   LL_APB1_GRP1_EnableClockLowPower(~0);
-   LL_APB1_GRP2_EnableClockLowPower(~0);
-   LL_APB2_GRP1_EnableClockLowPower(~0);
-   LL_APB4_GRP1_EnableClockLowPower(~0);
-   LL_APB4_GRP2_EnableClockLowPower(~0);
-   LL_APB5_GRP1_EnableClockLowPower(~0);
-   LL_MISC_EnableClockLowPower(~0);
+   // Power on and enable all AXISRAM memory banks
+   WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_CRCEN);
+   (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_CRCEN);
+   WRITE_REG(RCC->AHB2ENSR, RCC_AHB2ENR_RAMCFGEN);
+   (void)READ_BIT(RCC->AHB2ENR, RCC_AHB2ENR_RAMCFGEN);
+   WRITE_REG(RCC->MEMENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   (void)READ_BIT(RCC->MEMENR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   CLEAR_BIT(RAMCFG_SRAM2_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM3_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM4_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+
+   // Keep relevant IPs enabled during sleep so they can wake up the CPU
+   WRITE_REG(RCC->MISCLPENSR, (RCC_MISCENR_DBGEN | RCC_MISCENR_XSPIPHYCOMPEN));
+   (void)READ_REG(RCC->MISCLPENR);
+   WRITE_REG(RCC->MEMLPENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM1EN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN | RCC_MEMENR_FLEXRAMEN));
+   (void)READ_REG(RCC->MEMLPENR);
+   WRITE_REG(RCC->AHB1LPENSR, RCC_AHB1ENR_GPDMA1EN);
+   (void)READ_REG(RCC->AHB1LPENR);
+   WRITE_REG(RCC->AHB3LPENSR, (RCC_AHB3ENR_RIFSCEN | RCC_AHB3ENR_RISAFEN));
+   (void)READ_REG(RCC->AHB3LPENR);
+   WRITE_REG(RCC->AHB5LPENSR, (RCC_AHB5ENR_XSPIMEN | RCC_AHB5ENR_XSPI2EN | RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_SDMMC1EN));
+   (void)READ_REG(RCC->AHB5LPENR);
+   WRITE_REG(RCC->APB1LPENSR1, RCC_APB1ENR1_I2C3EN);
+   (void)READ_REG(RCC->APB1LPENR1);
+   WRITE_REG(RCC->APB2LPENSR, RCC_APB2ENR_SPI1EN);
+   (void)READ_REG(RCC->APB2LPENR);
 
    // Initialize the FFT, Mel Filterbank, and windowing structures
    arm_rfft_init(&fft);
@@ -237,17 +228,21 @@ void ai_init(void)
    const LL_Buffer_InfoTypeDef* input_buffers = NN_Interface_CivicAlert.input_buffers_info();
    const LL_Buffer_InfoTypeDef* output_buffers = NN_Interface_CivicAlert.output_buffers_info();
    data_in = (float*)LL_Buffer_addr_start(&input_buffers[0]);
-   data_in_end = (float*)LL_Buffer_addr_end(&input_buffers[0]);
+   data_in_len = LL_Buffer_len(&input_buffers[0]);
    data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);
-   data_out_end = (float*)LL_Buffer_addr_end(&output_buffers[0]);
+   data_out_len = LL_Buffer_len(&output_buffers[0]);
 
    // Initialize the AI runtime
    LL_ATON_RT_RuntimeInit();
    LL_ATON_RT_Init_Network(&NN_Instance_CivicAlert);
 
-   // Disable the NPU and its cache
-   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_CACHEAXIEN);
-   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_NPUEN);
+   // Disable the NPU, its cache, and unused AXISRAM banks
+   WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
+   SET_BIT(RAMCFG_SRAM3_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM4_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   WRITE_REG(RCC->MEMENCR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
 }
 
 void ai_process(volatile audio_packet_t *packet, uint8_t *output)
@@ -256,11 +251,15 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE] = { 0 };
    static float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS] = { 0 };
 
-   // Enable the NPU and its cache
-   WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_NPUEN);
-   (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_NPUEN);
-   WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_CACHEAXIEN);
-   (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_CACHEAXIEN);
+   // Enable the NPU, its cache, and necessary AXISRAM banks
+   WRITE_REG(RCC->AHB5ENSR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
+   (void)READ_BIT(RCC->AHB5ENR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
+   WRITE_REG(RCC->MEMENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   (void)READ_BIT(RCC->MEMENR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   CLEAR_BIT(RAMCFG_SRAM3_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM4_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   CLEAR_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
 
    // Fill in previously missing AI features using the incoming data
    for (uint32_t audio_idx = 0, time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
@@ -318,12 +317,11 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    }
 #endif  // #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX
 
-   // Reset the AI runtime and invalidate all caches
-   LL_ATON_RT_Reset_Network(&NN_Instance_CivicAlert);
-   LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_in, data_in_end - data_in);
+   // Invalidate all AI data caches
+   LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_in, data_in_len);
    LL_ATON_Cache_NPU_Invalidate();
 
-   // Run the inference loop
+   // Run the inference loop and reset the AI runtime
    LL_ATON_RT_RetValues_t ll_aton_rt_ret = LL_ATON_RT_DONE;
    do
    {
@@ -331,9 +329,10 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
       if (ll_aton_rt_ret == LL_ATON_RT_WFE)
          LL_ATON_OSAL_WFE();
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
+   LL_ATON_RT_Reset_Network(&NN_Instance_CivicAlert);
 
    // Invalidate the output cache and process the classification output
-   LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_out, data_out_end - data_out);
+   // TODO: NOT NEEDED? LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_out, data_out_len);
    max_value = (data_out[0] > data_out[1]) ? data_out[0] : data_out[1];
    const float sum_exp = expf(data_out[0] - max_value) + expf(data_out[1] - max_value);
    for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
@@ -342,8 +341,12 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
       output[i] = (uint8_t)((out_float > 100.0f) ? 100.0f : ((out_float < 0.0f) ? 0.0f : out_float));
    }
 
-   // Disable the NPU and its cache and feed the watchdog
-   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_CACHEAXIEN);
-   WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_NPUEN);
+   // Disable the NPU, its cache, and unused AXISRAM banks
+   WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
+   SET_BIT(RAMCFG_SRAM3_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM4_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   SET_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
+   WRITE_REG(RCC->MEMENCR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
    system_feed_watchdog();
 }
