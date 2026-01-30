@@ -19,7 +19,8 @@
       {
         "fname": "AXIFLEXMEM",
         "name":  "flexMEM",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 9.381,  "write_power": 8.569 },
         "offset": { "value": "0x34000000", "magnitude":  "BYTES" },
         "size":   { "value": "0",          "magnitude": "KBYTES" }
@@ -27,7 +28,8 @@
       {
         "fname": "AXISRAM1",
         "name":  "cpuRAM1",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 16.616, "write_power": 14.522 },
         "offset": { "value": "0x34064000", "magnitude":  "BYTES" },
         "size":   { "value": "624",        "magnitude": "KBYTES" }
@@ -35,7 +37,8 @@
       {
         "fname": "AXISRAM2",
         "name":  "cpuRAM2",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 17.324, "write_power": 15.321 },
         "offset": { "value": "0x34100000", "magnitude":  "BYTES" },
         "size":   { "value": "0",          "magnitude": "KBYTES" }
@@ -43,7 +46,8 @@
       {
         "fname": "AXISRAM3",
         "name":  "npuRAM3",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "HIGH", "latency": "LOW", "byteWidth": 8, "freqRatio": 1.25, "read_power": 18.531, "write_power": 16.201 },
         "offset": { "value": "0x34200000", "magnitude":  "BYTES" },
         "size":   { "value": "448",        "magnitude": "KBYTES" }
@@ -51,7 +55,8 @@
       {
         "fname": "AXISRAM4",
         "name":  "npuRAM4",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "HIGH", "latency": "LOW", "byteWidth": 8, "freqRatio": 1.25, "read_power": 18.531, "write_power": 16.201 },
         "offset": { "value": "0x34270000", "magnitude":  "BYTES" },
         "size":   { "value": "448",        "magnitude": "KBYTES" }
@@ -59,7 +64,8 @@
       {
         "fname": "AXISRAM5",
         "name":  "npuRAM5",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "HIGH", "latency": "LOW", "byteWidth": 8, "freqRatio": 1.25, "read_power": 18.531, "write_power": 16.201 },
         "offset": { "value": "0x342e0000", "magnitude":  "BYTES" },
         "size":   { "value": "448",        "magnitude": "KBYTES" }
@@ -67,7 +73,8 @@
       {
         "fname": "AXISRAM6",
         "name":  "npuRAM6",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "HIGH", "latency": "LOW", "byteWidth": 8, "freqRatio": 1.25, "read_power": 19.006, "write_power": 15.790 },
         "offset": { "value": "0x34350000", "magnitude":  "BYTES" },
         "size":   { "value": "448",        "magnitude": "KBYTES" }
@@ -75,7 +82,8 @@
       {
         "fname": "xSPI1",
         "name":  "hyperRAM",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID", "latency": "HIGH", "byteWidth": 2, "freqRatio": 5.00, "cacheable": "CACHEABLE_ON","read_power": 380, "write_power": 340.0, "constants_preferred": "true" },
         "offset": { "value": "0x90000000", "magnitude":  "BYTES" },
         "size":   { "value": "0",          "magnitude": "MBYTES" }
@@ -83,7 +91,8 @@
       {
         "fname": "xSPI2",
         "name":  "octoFlash",
-        "fformat": "FORMAT_HEX",
+        "fformat": "FORMAT_RAW",
+        "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_READ",  "throughput": "MID", "latency": "HIGH", "byteWidth": 1, "freqRatio": 6.00, "cacheable": "CACHEABLE_ON", "read_power": 110, "write_power": 400.0, "constants_preferred": "true" },
         "offset": { "value": "0x70400000", "magnitude":  "BYTES" },
         "size":   { "value": "28",         "magnitude": "MBYTES" }

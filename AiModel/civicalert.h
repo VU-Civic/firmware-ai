@@ -1,8 +1,8 @@
 /**
   ******************************************************************************
-  * @file    network.h
+  * @file    civicalert.h
   * @author  STEdgeAI
-  * @date    2025-12-16 17:23:37
+  * @date    2026-01-30 15:52:43
   * @brief   Minimal description of the generated c-implemention of the network
   ******************************************************************************
   * @attention
@@ -19,7 +19,7 @@
 #define LL_ATON_CIVICALERT_H
 
 /******************************************************************************/
-#define LL_ATON_CIVICALERT_C_MODEL_NAME        "CivicAlert"
+#define LL_ATON_CIVICALERT_C_MODEL_NAME        "civicalert"
 #define LL_ATON_CIVICALERT_ORIGIN_MODEL_NAME   "CivicAlert"
 
 /************************** USER ALLOCATED IOs ********************************/
@@ -34,7 +34,7 @@
 
 /************************** OUTPUTS *******************************************/
 #define LL_ATON_CIVICALERT_OUT_NUM        (1)    // Total number of output buffers
-// Output buffer 1 -- Dequantize_108_out_0
+// Output buffer 1 -- Dequantize_249_out_0
 #define LL_ATON_CIVICALERT_OUT_1_ALIGNMENT   (32)
 #define LL_ATON_CIVICALERT_OUT_1_SIZE_BYTES  (8)
 

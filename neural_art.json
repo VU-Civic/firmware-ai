@@ -4,7 +4,7 @@
   "Profiles": {
     "civicalert": {
       "memory_pool": "./stm32n6.mpool",
-      "options": "--network-name CivicAlert --native-float --mvei --cache-maintenance --Ocache-opt --Os --Oauto --Oauto-sched --enable-epoch-controller --enable-virtual-mem-pools"
+      "options": "--native-float --load-cdesc cortex-m55 --cache-maintenance --Ocache-opt --Os --Oauto --Omax-ca-pipe 0 --enable-epoch-controller --enable-virtual-mem-pools"
     }
   }
 }

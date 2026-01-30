@@ -1,14 +1,31 @@
+/**
+  ******************************************************************************
+  * @file    npu_cache.c
+  * @brief   Implementation of NPU-cache-handling functions (CACHEAXI)
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2024 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+#include <assert.h>
+
 #include "npu_cache.h"
 #include "stm32n6xx_hal_cacheaxi.h"
+#include "ll_aton_config.h"
+
+#if (LL_ATON_PLATFORM != LL_ATON_PLAT_STM32N6)
+#error "LL_ATON_PLATFORM should be equal to LL_ATON_PLAT_STM32N6"
+#endif
 
 #define CACHEAXI_COMMAND_CLEAN                   CACHEAXI_CR2_CACHECMD_0
 #define CACHEAXI_COMMAND_CLEAN_INVALIDATE        (CACHEAXI_CR2_CACHECMD_0|CACHEAXI_CR2_CACHECMD_1)
-
-void npu_cache_init(void)
-{
-   // Simply enable the NPU cache
-   npu_cache_enable();
-}
 
 void npu_cache_enable(void)
 {
@@ -75,7 +92,22 @@ void npu_cache_clean_invalidate_range(uint32_t start_addr, uint32_t end_addr)
    }
 }
 
-void NPU_CACHE_IRQHandler(void)
+/* 
+  Weak functions called by HAL_CACHEAXI_Init/DeInit implementations 
+*/
+void HAL_CACHEAXI_MspInit(CACHEAXI_HandleTypeDef *hcacheaxi)
 {
-   __NOP();
+  npu_cache_enable_clocks_and_reset();
 }
+
+void HAL_CACHEAXI_MspDeInit(CACHEAXI_HandleTypeDef *hcacheaxi)
+{
+  npu_cache_disable_clocks_and_reset();
+}
+
+/*
+  Exposed weak functions to be implemented by the user if needed:
+  The CACHEAXI IP must be clocked and reset before use.
+*/
+__weak void npu_cache_enable_clocks_and_reset(void){};
+__weak void npu_cache_disable_clocks_and_reset(void){};

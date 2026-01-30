@@ -59,7 +59,7 @@ typedef struct {
 
 // Static AI Network Variables -----------------------------------------------------------------------------------------
 
-LL_ATON_DECLARE_NAMED_NN_INSTANCE_AND_INTERFACE(CivicAlert)
+LL_ATON_DECLARE_NAMED_NN_INSTANCE_AND_INTERFACE(civicalert)
 static float *data_in, *data_out;
 static int32_t data_in_len, data_out_len;
 static float hanning_window[AI_FFT_WINDOW_SIZE];
@@ -188,7 +188,7 @@ void ai_init(void)
    (void)READ_BIT(RCC->AHB5ENR, RCC_AHB5ENR_CACHEAXIEN);
    WRITE_REG(RCC->AHB5RSTSR, RCC_AHB5ENR_CACHEAXIEN);
    WRITE_REG(RCC->AHB5RSTCR, RCC_AHB5ENR_CACHEAXIEN);
-   npu_cache_init();
+   npu_cache_enable();
 
    // Power on and enable all AXISRAM memory banks
    WRITE_REG(RCC->AHB4ENSR, RCC_AHB4ENR_CRCEN);
@@ -225,8 +225,8 @@ void ai_init(void)
    arm_hanning_f32(hanning_window, AI_FFT_WINDOW_SIZE);
 
    // Retrieve pointers to the AI input and output buffers
-   const LL_Buffer_InfoTypeDef* input_buffers = NN_Interface_CivicAlert.input_buffers_info();
-   const LL_Buffer_InfoTypeDef* output_buffers = NN_Interface_CivicAlert.output_buffers_info();
+   const LL_Buffer_InfoTypeDef* input_buffers = NN_Interface_civicalert.input_buffers_info();
+   const LL_Buffer_InfoTypeDef* output_buffers = NN_Interface_civicalert.output_buffers_info();
    data_in = (float*)LL_Buffer_addr_start(&input_buffers[0]);
    data_in_len = LL_Buffer_len(&input_buffers[0]);
    data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);
@@ -234,7 +234,7 @@ void ai_init(void)
 
    // Initialize the AI runtime
    LL_ATON_RT_RuntimeInit();
-   LL_ATON_RT_Init_Network(&NN_Instance_CivicAlert);
+   LL_ATON_RT_Init_Network(&NN_Instance_civicalert);
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
@@ -319,17 +319,17 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
 
    // Invalidate all AI data caches
    LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_in, data_in_len);
-   LL_ATON_Cache_NPU_Invalidate();
+   //LL_ATON_Cache_NPU_Invalidate_Range(); // TODO: IS THIS NO LONGER NEEDED??
 
    // Run the inference loop and reset the AI runtime
    LL_ATON_RT_RetValues_t ll_aton_rt_ret = LL_ATON_RT_DONE;
    do
    {
-      ll_aton_rt_ret = LL_ATON_RT_RunEpochBlock(&NN_Instance_CivicAlert);
+      ll_aton_rt_ret = LL_ATON_RT_RunEpochBlock(&NN_Instance_civicalert);
       if (ll_aton_rt_ret == LL_ATON_RT_WFE)
          LL_ATON_OSAL_WFE();
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
-   LL_ATON_RT_Reset_Network(&NN_Instance_CivicAlert);
+   LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
 
    // Invalidate the output cache and process the classification output
    // TODO: NOT NEEDED? LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_out, data_out_len);

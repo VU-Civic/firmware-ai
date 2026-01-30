@@ -1,5 +1,5 @@
 AI_MODEL_DIR := AiModel
-AI_MODEL := $(AI_MODEL_DIR)/CivicAlert.onnx
+AI_MODEL := $(AI_MODEL_DIR)/CivicAlert.tflite
 AI_WEIGHTS := $(AI_MODEL_DIR)/CivicAlert.hex
 AI_WEIGHTS_ADDRESS := 0x70400000
 LOADER := CivicAlertAiLoader.stldr
@@ -50,9 +50,10 @@ ifeq (,$(wildcard $(STM32_PRG_PATH)/ExternalLoader/$(LOADER)))
 endif
 
 weights:
-	$(STM32_AI_PATH)/$(WEIGHTS_GEN) generate --model $(AI_MODEL) --st-neural-art civicalert@neural_art.json --target stm32n6 --optimize.export_hybrid True --input-data-type float32 --output-data-type float32 --name network --workspace workspace --output output
-	$(OBJCOPY) -I binary output/network_atonbuf.xSPI2.* --change-addresses $(AI_WEIGHTS_ADDRESS) -O ihex $(AI_WEIGHTS)
-	$(COPY) output/*.{h,c} $(AI_MODEL_DIR)
+	$(RM) $(AI_MODEL_DIR)/*.{h,c,hex}
+	$(STM32_AI_PATH)/$(WEIGHTS_GEN) generate --model $(AI_MODEL) --st-neural-art civicalert@neural_art.json --target stm32n6 --optimize.export_hybrid True --input-data-type float32 --output-data-type float32 --name civicalert --workspace workspace --output output
+	$(OBJCOPY) -I binary output/civicalert_atonbuf.xSPI2.raw --change-addresses $(AI_WEIGHTS_ADDRESS) -O ihex $(AI_WEIGHTS)
+	$(COPY) output/civicalert.{h,c} $(AI_MODEL_DIR)
 	$(RM) workspace output
 	$(PRINT) "\n*** AI MODEL HAS CHANGED! FIRMWARE SHOULD BE REBUILT AND REFLASHED! ***\n"
 

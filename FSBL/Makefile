@@ -10,7 +10,7 @@ MAP_FILE := $(BUILD)/$(TARGET).map
 SIZE_OUTPUT := default.size.stdout
 OBJDUMP_LIST := $(BUILD)/$(TARGET).list
 LINKER_FILE := STM32N647_CivicAlert.ld
-AI_LINKER_FILE := NetworkRuntime1020_CM55_GCC
+AI_LINKER_FILE := NetworkRuntime1100_CM55_GCC
 
 ifndef STM32_PRG_PATH
 ifeq ($(OS),Windows_NT)
@@ -41,7 +41,7 @@ RM := rm -rf
 FLASH := STM32_Programmer_CLI
 SIGN := STM32_SigningTool_CLI
 
-DEFINES := -D_DATETIME=$(shell date +%s) -DBOARD_REV=$(BOARD_REV) -DSTM32N647xx -DARM_MATH_HELIUM -DLL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6 -DLL_ATON_RT_MODE=LL_ATON_RT_ASYNC -DLL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL -DLL_ATON_DBG_BUFFER_INFO_EXCLUDED=1 -DLL_ATON_SW_FALLBACK
+DEFINES := -D_DATETIME=$(shell date +%s) -DBOARD_REV=$(BOARD_REV) -DSTM32N647xx -DPERIPH_GET_TICK -DARM_MATH_HELIUM -DLL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6 -DLL_ATON_RT_MODE=LL_ATON_RT_ASYNC -DLL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL -DLL_ATON_DBG_BUFFER_INFO_EXCLUDED=1 -DLL_ATON_SW_FALLBACK
 
 VPATH := Core/Src ../AiModel Middlewares/ST/AI/Npu/Devices/STM32N6XX Middlewares/ST/AI/Npu/ll_aton Middlewares/FatFS
 INCLUDES := -ICore/Inc -I../AiModel -I../Drivers/STM32N6xx_HAL_Driver/Inc -I../Drivers/STM32N6xx_HAL_Driver/Inc/Legacy -IDrivers/CMSIS/Device/ST/STM32N6xx/Include -IDrivers/CMSIS/Include -IDrivers/CMSIS_DSP/Include -IDrivers/CMSIS_DSP/Include/dsp -IDrivers/CMSIS_DSP/PrivateInclude -IMiddlewares/ST/AI/Inc -IMiddlewares/ST/AI/Npu/Devices/STM32N6XX -IMiddlewares/ST/AI/Npu/ll_aton -IMiddlewares/FatFS
@@ -50,21 +50,21 @@ CMSIS_DSP_SOURCES := arm_common_tables.c arm_const_structs.c arm_mve_tables.c ar
 VPATH +=  ../Drivers/STM32N6xx_HAL_Driver/Src Drivers/CMSIS_DSP/Source/BasicMathFunctions Drivers/CMSIS_DSP/Source/ComplexMathFunctions Drivers/CMSIS_DSP/Source/CommonTables Drivers/CMSIS_DSP/Source/FastMathFunctions Drivers/CMSIS_DSP/Source/StatisticsFunctions Drivers/CMSIS_DSP/Source/SupportFunctions Drivers/CMSIS_DSP/Source/TransformFunctions Drivers/CMSIS_DSP/Source/WindowFunctions
 OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o) $(CMSIS_DSP_SOURCES:%.c=$(BUILD)/%.o) $(BUILD)/startup_stm32n647l0hxq_fsbl.o $(BUILD)/stm32n6xx_hal_xspi.o $(BUILD)/stm32n6xx_ll_sdmmc.o
 
-CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -fno-omit-frame-pointer -ffunction-sections -fdata-sections -falign-functions=16 -Wall -fstack-usage -mcmse -MMD -MP
+CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -fno-short-wchar -funsigned-char -fshort-enums -ffunction-sections -fdata-sections -falign-functions=16 -Wall -fstack-usage -mcmse -MMD -MP
 CFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb
 LFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) --specs=nosys.specs -Wl,-Map=$(MAP_FILE) -Wl,--gc-sections -static -Wl,--cmse-implib -Wl,--out-implib=$(BUILD)/secure_nsclib.o
-LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -z noexecstack -Wl,--start-group -lc -lm -Wl,--end-group
 
 
 #### Build Targets ####
 
 all: CFLAGS += -Ofast
 all: directories $(EXECUTABLE) secondary-outputs
-	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s
+	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s --align
 
 debug: CFLAGS += -g3 -DDEBUG -O0
 debug: directories $(EXECUTABLE) secondary-outputs
-	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s
+	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s --align
 
 directories: $(BUILD)
 
