@@ -1,6 +1,7 @@
 // Header Inclusions ---------------------------------------------------------------------------------------------------
 
 #include "flash.h"
+#include "system.h"
 
 
 // Flash Memory Characteristics ----------------------------------------------------------------------------------------
@@ -503,7 +504,8 @@ void flash_init(void)
       UsageFault_Handler();
 
    // Wait until the memory becomes available again
-   HAL_Delay(100U);
+   uint32_t tick_start = system_get_tick();
+   while ((system_get_tick() - tick_start) < 101U);
    if (!auto_polling_mem_ready(&hxspi2, MX25UM25645G_SPI_MODE, MX25UM25645G_STR_TRANSFER))
       UsageFault_Handler();
 
@@ -515,7 +517,8 @@ void flash_init(void)
       UsageFault_Handler();
 
    // Wait for the configuration to take effect then re-initialize the peripheral to operate at 200MHz
-   HAL_Delay(40U);
+   tick_start = system_get_tick();
+   while ((system_get_tick() - tick_start) < 41U);
    MODIFY_REG(XSPI2->DCR1, (XSPI_DCR1_MTYP | XSPI_DCR1_DEVSIZE | XSPI_DCR1_CSHT | XSPI_DCR1_FRCK | XSPI_DCR1_CKMODE), (HAL_XSPI_MEMTYPE_MACRONIX | (HAL_XSPI_SIZE_256MB << XSPI_DCR1_DEVSIZE_Pos) | ((2U - 1U) << XSPI_DCR1_CSHT_Pos) | HAL_XSPI_CLOCK_MODE_0));
    CLEAR_BIT(XSPI2->DCR2, XSPI_DCR2_WRAPSIZE);
    CLEAR_BIT(XSPI2->DCR3, (XSPI_DCR3_CSBOUND | XSPI_DCR3_MAXTRAN));

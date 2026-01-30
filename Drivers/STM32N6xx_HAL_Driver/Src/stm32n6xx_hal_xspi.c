@@ -256,6 +256,8 @@
 #include "stm32n6xx_hal.h"
 #include "stm32n6xx_hal_rcc.h"
 
+extern uint32_t system_get_tick(void);
+
 #if defined(XSPI) || defined(XSPI1) || defined(XSPI2) || defined(XSPI3)
 
 /** @addtogroup STM32N6xx_HAL_Driver
@@ -339,7 +341,7 @@ static void XSPIM_GetConfig(uint8_t instance_nb, XSPIM_CfgTypeDef *pCfg);
 HAL_StatusTypeDef HAL_XSPI_Init(XSPI_HandleTypeDef *hxspi)
 {
   HAL_StatusTypeDef status = HAL_OK;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the XSPI handle allocation */
   if (hxspi == NULL)
@@ -822,7 +824,7 @@ HAL_StatusTypeDef HAL_XSPI_Command(XSPI_HandleTypeDef *hxspi, const XSPI_Regular
 {
   HAL_StatusTypeDef status;
   uint32_t state;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the parameters of the command structure */
   assert_param(IS_XSPI_OPERATION_TYPE(pCmd->OperationType));
@@ -957,7 +959,7 @@ HAL_StatusTypeDef HAL_XSPI_Command(XSPI_HandleTypeDef *hxspi, const XSPI_Regular
 HAL_StatusTypeDef HAL_XSPI_Command_IT(XSPI_HandleTypeDef *hxspi, const XSPI_RegularCmdTypeDef *pCmd)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the parameters of the command structure */
   assert_param(IS_XSPI_OPERATION_TYPE(pCmd->OperationType));
@@ -1048,7 +1050,7 @@ HAL_StatusTypeDef HAL_XSPI_HyperbusCfg(XSPI_HandleTypeDef *hxspi, const XSPI_Hyp
 {
   HAL_StatusTypeDef status;
   uint32_t state;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the parameters of the hyperbus configuration structure */
   assert_param(IS_XSPI_RW_RECOVERY_TIME_CYCLE(pCfg->RWRecoveryTimeCycle));
@@ -1098,7 +1100,7 @@ HAL_StatusTypeDef HAL_XSPI_HyperbusCmd(XSPI_HandleTypeDef *hxspi, const XSPI_Hyp
                                        uint32_t Timeout)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the parameters of the hyperbus command structure */
   assert_param(IS_XSPI_ADDRESS_SPACE(pCmd->AddressSpace));
@@ -1164,7 +1166,7 @@ HAL_StatusTypeDef HAL_XSPI_HyperbusCmd(XSPI_HandleTypeDef *hxspi, const XSPI_Hyp
 HAL_StatusTypeDef HAL_XSPI_Transmit(XSPI_HandleTypeDef *hxspi, const uint8_t *pData, uint32_t Timeout)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
   __IO uint32_t *data_reg = &hxspi->Instance->DR;
 
   /* Check the data pointer allocation */
@@ -1236,7 +1238,7 @@ HAL_StatusTypeDef HAL_XSPI_Transmit(XSPI_HandleTypeDef *hxspi, const uint8_t *pD
 HAL_StatusTypeDef HAL_XSPI_Receive(XSPI_HandleTypeDef *hxspi, uint8_t *pData, uint32_t Timeout)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
   __IO uint32_t *data_reg = &hxspi->Instance->DR;
   uint32_t addr_reg = hxspi->Instance->AR;
   uint32_t ir_reg = hxspi->Instance->IR;
@@ -1831,7 +1833,7 @@ HAL_StatusTypeDef HAL_XSPI_AutoPolling(XSPI_HandleTypeDef *hxspi, const XSPI_Aut
                                        uint32_t Timeout)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
   uint32_t addr_reg = hxspi->Instance->AR;
   uint32_t ir_reg = hxspi->Instance->IR;
 #ifdef USE_FULL_ASSERT
@@ -1911,7 +1913,7 @@ HAL_StatusTypeDef HAL_XSPI_AutoPolling(XSPI_HandleTypeDef *hxspi, const XSPI_Aut
 HAL_StatusTypeDef HAL_XSPI_AutoPolling_IT(XSPI_HandleTypeDef *hxspi, const XSPI_AutoPollingTypeDef *pCfg)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
   uint32_t addr_reg = hxspi->Instance->AR;
   uint32_t ir_reg = hxspi->Instance->IR;
 #ifdef USE_FULL_ASSERT
@@ -1984,7 +1986,7 @@ HAL_StatusTypeDef HAL_XSPI_AutoPolling_IT(XSPI_HandleTypeDef *hxspi, const XSPI_
 HAL_StatusTypeDef HAL_XSPI_MemoryMapped(XSPI_HandleTypeDef *hxspi, const XSPI_MemoryMappedTypeDef *pCfg)
 {
   HAL_StatusTypeDef status;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check the parameters of the memory-mapped configuration structure */
   assert_param(IS_XSPI_TIMEOUT_ACTIVATION(pCfg->TimeOutActivation));
@@ -2436,7 +2438,7 @@ HAL_StatusTypeDef HAL_XSPI_UnRegisterCallback(XSPI_HandleTypeDef *hxspi, HAL_XSP
 HAL_StatusTypeDef HAL_XSPI_Abort(XSPI_HandleTypeDef *hxspi)
 {
   HAL_StatusTypeDef status = HAL_OK;
-  uint32_t tickstart = HAL_GetTick();
+  uint32_t tickstart = system_get_tick();
 
   /* Check if the state is not in reset state */
   if (hxspi->State != HAL_XSPI_STATE_RESET)
@@ -3200,7 +3202,7 @@ static HAL_StatusTypeDef XSPI_WaitFlagStateUntilTimeout(XSPI_HandleTypeDef *hxsp
     /* Check for the Timeout */
     if (Timeout != HAL_MAX_DELAY)
     {
-      if (((HAL_GetTick() - Tickstart) > Timeout) || (Timeout == 0U))
+      if (((system_get_tick() - Tickstart) > Timeout) || (Timeout == 0U))
       {
         hxspi->State     = HAL_XSPI_STATE_READY;
         hxspi->ErrorCode |= HAL_XSPI_ERROR_TIMEOUT;

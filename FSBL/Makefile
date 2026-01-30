@@ -48,7 +48,7 @@ INCLUDES := -ICore/Inc -I../AiModel -I../Drivers/STM32N6xx_HAL_Driver/Inc -I../D
 SOURCES := $(foreach SOURCE,$(foreach DIR,$(VPATH),$(wildcard $(DIR)/*.c)),$(patsubst %.c,%.c,$(notdir $(SOURCE))))
 CMSIS_DSP_SOURCES := arm_common_tables.c arm_const_structs.c arm_mve_tables.c arm_dot_prod_f32.c arm_mult_f32.c arm_cmplx_mag_f32.c arm_cmplx_mag_squared_f32.c arm_copy_f32.c arm_copy_q7.c arm_copy_q15.c arm_offset_f32.c arm_q15_to_float.c arm_cfft_f32.c arm_cfft_init_f32.c arm_rfft_fast_f32.c arm_rfft_fast_init_f32.c arm_hanning_f32.c arm_max_no_idx_f32.c arm_min_no_idx_f32.c arm_scale_f32.c
 VPATH +=  ../Drivers/STM32N6xx_HAL_Driver/Src Drivers/CMSIS_DSP/Source/BasicMathFunctions Drivers/CMSIS_DSP/Source/ComplexMathFunctions Drivers/CMSIS_DSP/Source/CommonTables Drivers/CMSIS_DSP/Source/FastMathFunctions Drivers/CMSIS_DSP/Source/StatisticsFunctions Drivers/CMSIS_DSP/Source/SupportFunctions Drivers/CMSIS_DSP/Source/TransformFunctions Drivers/CMSIS_DSP/Source/WindowFunctions
-OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o) $(CMSIS_DSP_SOURCES:%.c=$(BUILD)/%.o) $(BUILD)/startup_stm32n647l0hxq_fsbl.o $(BUILD)/stm32n6xx_hal.o $(BUILD)/stm32n6xx_hal_xspi.o $(BUILD)/stm32n6xx_ll_sdmmc.o
+OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o) $(CMSIS_DSP_SOURCES:%.c=$(BUILD)/%.o) $(BUILD)/startup_stm32n647l0hxq_fsbl.o $(BUILD)/stm32n6xx_hal_xspi.o $(BUILD)/stm32n6xx_ll_sdmmc.o
 
 CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -fno-omit-frame-pointer -ffunction-sections -fdata-sections -falign-functions=16 -Wall -fstack-usage -mcmse -MMD -MP
 CFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb

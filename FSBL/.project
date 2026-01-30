@@ -42,11 +42,6 @@
 			<locationURI>PARENT-1-PROJECT_LOC/AiModel/network.c</locationURI>
 		</link>
 		<link>
-			<name>Drivers/STM32N6xx_HAL_Driver/stm32n6xx_hal.c</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal.c</locationURI>
-		</link>
-		<link>
 			<name>Drivers/STM32N6xx_HAL_Driver/stm32n6xx_hal_xspi.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_xspi.c</locationURI>

@@ -10,13 +10,11 @@
 
 // C Standard Library Replacement Functions ----------------------------------------------------------------------------
 
-static uint8_t *__sbrk_heap_end = NULL;
+static uint8_t *__sbrk_heap_end;
+static volatile uint32_t sys_tick;
 
 extern int __io_putchar(int ch) __attribute__((weak));
 extern int __io_getchar(void) __attribute__((weak));
-
-char *__env[1] = { 0 };
-char **environ = __env;
 
 void initialise_monitor_handles() {}
 int _getpid(void) { return 1; }
@@ -40,8 +38,7 @@ int _execve(char*, char**, char**) { errno = ENOMEM; return -1; }
 void *_sbrk(ptrdiff_t incr)
 {
    // Symbols defined in the linker script
-   extern uint8_t _end;
-   extern uint8_t _estack;
+   extern uint8_t _end, _estack;
    extern uint32_t _Min_Stack_Size;
 
    // Stack and heap limits
@@ -75,7 +72,7 @@ void SecureFault_Handler(void) { while (1); }
 void SVC_Handler(void) {}
 void DebugMon_Handler(void) {}
 void PendSV_Handler(void) {}
-void SysTick_Handler(void) { HAL_IncTick(); }
+void SysTick_Handler(void) { sys_tick++; }
 void Error_Handler(void) { __disable_irq(); while (1); }
 
 
@@ -87,11 +84,12 @@ void Error_Handler(void) { __disable_irq(); while (1); }
 #define VDDIO4_HSLV_MASK (1U<<14)
 
 extern void *g_pfnVectors;
-uint32_t SystemCoreClock = HSI_VALUE;
+uint32_t SystemCoreClock;
 
 void SystemInit(void)
 {
-   // Configure the Vector Table location
+   // Configure the initial System Core Clock and Vector Table location
+   SystemCoreClock = HSI_VALUE;
    SCB->VTOR = ((uint32_t)&g_pfnVectors);
 
    // Reset the RNG and deactivate its clock
@@ -612,7 +610,12 @@ void system_delay(uint32_t ms)
 {
    // Resume the SysTick timer, delay, then stop the timer
    SET_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
-   const uint32_t tick_start = HAL_GetTick(), wait = ms + 1;
-   while ((HAL_GetTick() - tick_start) < wait);
+   const uint32_t tick_start = sys_tick, wait = ms + 1;
+   while ((sys_tick - tick_start) < wait);
    CLEAR_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
+}
+
+uint32_t system_get_tick(void)
+{
+   return sys_tick;
 }
