@@ -14,11 +14,11 @@
 #define AI_INPUT_NUM_ROWS                      224
 
 #define AI_FFT_FILTER_SIZE                     4096   // Must be 256, 512, 1024, 2048, or 4096
-#define AI_FFT_STEP_SIZE                       250    // Must be 100, 125, 160, 200, 250, 320, 400, 500, 800, or 1000 and <= AI_FFT_FILTER_SIZE
-#define AI_FFT_WINDOW_SIZE                     864    // Must be <= AI_FFT_FILTER_SIZE and >= AI_FFT_STEP_SIZE
+#define AI_FFT_STEP_SIZE                       200    // Must be 100, 125, 160, 200, 250, 320, 400, 500, 800, or 1000 and <= AI_FFT_FILTER_SIZE
+#define AI_FFT_WINDOW_SIZE                     800    // Must be <= AI_FFT_FILTER_SIZE and >= AI_FFT_STEP_SIZE
 
-#define AI_SPECTROGRAM_MIN_FREQUENCY_HZ        125
-#define AI_SPECTROGRAM_MAX_FREQUENCY_HZ        10000
+#define AI_SPECTROGRAM_MIN_FREQUENCY_HZ        20
+#define AI_SPECTROGRAM_MAX_FREQUENCY_HZ        16000
 #define AI_SPECTROGRAM_NUM_MELS                AI_INPUT_NUM_ROWS   // If num_mels != num_rows, spectrogram output must be upscaled
 #define AI_SPECTROGRAM_NUM_TIME_STEPS          AI_INPUT_NUM_COLUMNS   // If num_time_steps != num_columns, tspectrogram output must be upscaled
 
@@ -195,8 +195,8 @@ void ai_init(void)
    (void)READ_BIT(RCC->AHB4ENR, RCC_AHB4ENR_CRCEN);
    WRITE_REG(RCC->AHB2ENSR, RCC_AHB2ENR_RAMCFGEN);
    (void)READ_BIT(RCC->AHB2ENR, RCC_AHB2ENR_RAMCFGEN);
-   WRITE_REG(RCC->MEMENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
-   (void)READ_BIT(RCC->MEMENR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM2EN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   WRITE_REG(RCC->MEMENSR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
+   (void)READ_BIT(RCC->MEMENR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
    CLEAR_BIT(RAMCFG_SRAM2_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
    CLEAR_BIT(RAMCFG_SRAM3_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
    CLEAR_BIT(RAMCFG_SRAM4_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
@@ -225,8 +225,8 @@ void ai_init(void)
    arm_hanning_f32(hanning_window, AI_FFT_WINDOW_SIZE);
 
    // Retrieve pointers to the AI input and output buffers
-   const LL_Buffer_InfoTypeDef* input_buffers = NN_Interface_civicalert.input_buffers_info();
-   const LL_Buffer_InfoTypeDef* output_buffers = NN_Interface_civicalert.output_buffers_info();
+   const LL_Buffer_InfoTypeDef* input_buffers = LL_ATON_Input_Buffers_Info(&NN_Instance_civicalert);
+   const LL_Buffer_InfoTypeDef* output_buffers = LL_ATON_Output_Buffers_Info(&NN_Instance_civicalert);
    data_in = (float*)LL_Buffer_addr_start(&input_buffers[0]);
    data_in_len = LL_Buffer_len(&input_buffers[0]);
    data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);

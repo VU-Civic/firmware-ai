@@ -53,7 +53,7 @@ weights:
 	$(RM) $(AI_MODEL_DIR)/*.{h,c,hex}
 	$(STM32_AI_PATH)/$(WEIGHTS_GEN) generate --model $(AI_MODEL) --st-neural-art civicalert@neural_art.json --target stm32n6 --optimize.export_hybrid True --input-data-type float32 --output-data-type float32 --name civicalert --workspace workspace --output output
 	$(OBJCOPY) -I binary output/civicalert_atonbuf.xSPI2.raw --change-addresses $(AI_WEIGHTS_ADDRESS) -O ihex $(AI_WEIGHTS)
-	$(COPY) output/civicalert.{h,c} $(AI_MODEL_DIR)
+	$(COPY) output/civicalert*.{h,c} $(AI_MODEL_DIR)
 	$(RM) workspace output
 	$(PRINT) "\n*** AI MODEL HAS CHANGED! FIRMWARE SHOULD BE REBUILT AND REFLASHED! ***\n"
 

@@ -1,36 +1,3 @@
-/*
-******************************************************************************
-**
-** @file        : STM32N6XX_AXISRAM2_fsbl.ld
-**
-** @author      : GPM Application Team
-**
-** @brief       : Linker script for STM32N6XX Device from STM32N6 series
-**                      512 KBytes RAM
-**
-**                Set heap size, stack size and stack location according
-**                to application requirements.
-**
-**                Set memory bank area and size if external memory is used
-**
-**  Target      : STMicroelectronics STM32
-**
-**  Distribution: The file is distributed as is, without any warranty
-**                of any kind.
-**
-******************************************************************************
-** @attention
-**
-** Copyright (c) 2025 STMicroelectronics.
-** All rights reserved.
-**
-** This software is licensed under terms that can be found in the LICENSE file
-** in the root directory of this software component.
-** If no LICENSE file comes with this software, it is provided AS-IS.
-**
-******************************************************************************
-*/
-
 /* Entry Point */
 ENTRY(Reset_Handler)
 
@@ -39,37 +6,37 @@ _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" type memory */
 _sstack = _estack - _Min_Stack_Size;
 
 _Min_Heap_Size = 0x800 ; /* required amount of heap */
-_Min_Stack_Size = 0x10000 ; /* required amount of stack */
+_Min_Stack_Size = 0xC350 ; /* required amount of stack */
 
 /* Memories definition */
 MEMORY
 {
-  ROM    (xrw)    : ORIGIN = 0x34180400,   LENGTH = 511K
-  RAM    (xrw)    : ORIGIN = 0x34100000,   LENGTH = 512K
+  ROM (xrw)    : ORIGIN = 0x34180400,   LENGTH = 511K
+  RAM (xrw)    : ORIGIN = 0x34100000,   LENGTH = 512K
 }
 
 /* Sections */
 SECTIONS
 {
-  /* The startup code into "ROM"type memory */
+  /* The startup code goes into "ROM" type memory */
   .isr_vector :
   {
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    KEEP(*(.isr_vector))
     . = ALIGN(4);
   } >ROM
 
-  /* The program code and other data into "ROM" type memory */
+  /* The program code and other data goes into "ROM" type memory */
   .text :
   {
     . = ALIGN(4);
-    *(.text)           /* .text sections (code) */
-    *(.text*)          /* .text* sections (code) */
+    *(.text)
+    *(.text*)
     *(.glue_7)         /* glue arm to thumb code */
     *(.glue_7t)        /* glue thumb to arm code */
     *(.eh_frame)
-    *(.RamFunc)        /* .RamFunc sections */
-    *(.RamFunc*)       /* .RamFunc* sections */
+    *(.RamFunc)
+    *(.RamFunc*)
 
     KEEP (*(.init))
     KEEP (*(.fini))
@@ -78,23 +45,30 @@ SECTIONS
     _etext = .;        /* define a global symbols at end of code */
   } >ROM
 
-  /* Constant data into "ROM" type memory */
-  .rodata :
+  .gnu.sgstubs :
   {
     . = ALIGN(4);
-    *(.rodata)         /* .rodata sections (constants, strings, etc.) */
-    *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
+    *(.gnu.sgstubs*)   /* Secure Gateway stubs */
     . = ALIGN(4);
   } >ROM
 
-  .ARM.extab   (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  /* Constant data goes into "ROM" type memory */
+  .rodata :
+  {
+    . = ALIGN(4);
+    *(.rodata)
+    *(.rodata*)
+    . = ALIGN(4);
+  } >ROM
+
+  .ARM.extab (READONLY) :
    {
     . = ALIGN(4);
     *(.ARM.extab* .gnu.linkonce.armextab.*)
     . = ALIGN(4);
   } >ROM
 
-  .ARM (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .ARM (READONLY) :
    {
     . = ALIGN(4);
     __exidx_start = .;
@@ -103,7 +77,7 @@ SECTIONS
     . = ALIGN(4);
   } >ROM
 
-  .preinit_array     (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .preinit_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -112,7 +86,7 @@ SECTIONS
     . = ALIGN(4);
   } >ROM
 
-  .init_array (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .init_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__init_array_start = .);
@@ -122,7 +96,7 @@ SECTIONS
     . = ALIGN(4);
   } >ROM
 
-  .fini_array (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .fini_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__fini_array_start = .);
@@ -135,26 +109,19 @@ SECTIONS
   /* Used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
-  /* Initialized data sections into "RAM" type memory */
+  /* Initialized data sections go into "RAM" type memory */
   .data :
   {
     . = ALIGN(4);
     _sdata = .;        /* create a global symbol at data start */
-    *(.data)           /* .data sections */
-    *(.data*)          /* .data* sections */
+    *(.data)
+    *(.data*)
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
   } >RAM AT> ROM
 
-  .gnu.sgstubs :
-  {
-    . = ALIGN(4);
-    *(.gnu.sgstubs*)   /* Secure Gateway stubs */
-    . = ALIGN(4);
-  } >ROM
-
-  /* Uninitialized data section into "RAM" type memory */
+  /* Uninitialized data section goes into "RAM" type memory */
   . = ALIGN(4);
   .bss :
   {
