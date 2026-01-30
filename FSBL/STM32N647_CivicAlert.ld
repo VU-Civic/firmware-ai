@@ -39,7 +39,7 @@ _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 _sstack = _estack - _Min_Stack_Size;
 
 _Min_Heap_Size = 0x800 ; /* required amount of heap */
-_Min_Stack_Size = 0x800 ; /* required amount of stack */
+_Min_Stack_Size = 0x10000 ; /* required amount of stack */
 
 /* Memories definition */
 MEMORY
@@ -51,7 +51,7 @@ MEMORY
 /* Sections */
 SECTIONS
 {
-  /* The startup code into "RAM" Ram type memory */
+  /* The startup code into "ROM" Ram type memory */
   .isr_vector :
   {
     . = ALIGN(4);
@@ -59,7 +59,7 @@ SECTIONS
     . = ALIGN(4);
   } >ROM
 
-  /* The program code and other data into "RAM" Ram type memory */
+  /* The program code and other data into "ROM" Ram type memory */
   .text :
   {
     . = ALIGN(4);
@@ -78,7 +78,7 @@ SECTIONS
     _etext = .;        /* define a global symbols at end of code */
   } >ROM
 
-  /* Constant data into "RAM" Ram type memory */
+  /* Constant data into "ROM" Ram type memory */
   .rodata :
   {
     . = ALIGN(4);
@@ -145,7 +145,6 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-
   } >RAM AT> ROM
 
   .gnu.sgstubs :
@@ -167,17 +166,17 @@ SECTIONS
     *(COMMON)
 
     . = ALIGN(4);
-    _ebss = .;         /* define a global symbol at bss end */
-    __bss_end__ = _ebss;
   } >RAM
 
-  .noncacheable :
+  .noncacheable (NOLOAD) :
   {
     . = ALIGN(8);
     __snoncacheable = .;/* create symbol for start of section */
     KEEP(*(.noncacheable))
     . = ALIGN(8);
     __enoncacheable = .;  /* create symbol for end of section */
+    _ebss = .;            /* define a global symbol at bss end */
+    __bss_end__ = _ebss;
   } > RAM
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram type memory left */

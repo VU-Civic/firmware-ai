@@ -53,7 +53,7 @@ typedef struct {
 // Static Storage Variables --------------------------------------------------------------------------------------------
 
 static volatile uint8_t audio_file_open;
-static volatile DSTATUS sd_card_status = STA_NOINIT;
+static volatile DSTATUS sd_card_status;
 static volatile uint32_t sd_xfer_context, sd_result_ready, sd_timed_out;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
 static uint32_t pcm_write_index, output_buffer_len, sd_write_index;
@@ -476,8 +476,8 @@ static void sd_card_open_file(uint32_t audio_timestamp)
    // Determine if time to create a new storage directory
    const time_t timestamp = (time_t)audio_timestamp;
    struct tm *curr_time = gmtime(&timestamp);
-   static uint32_t audio_directory_timestamp = 0;
-   static char time_string[10] = { 0 }, audio_directory[14] = { 0 };
+   static uint32_t audio_directory_timestamp;
+   static char time_string[10], audio_directory[14];
    strftime(time_string, sizeof(time_string), "%H%M%S", curr_time);
    if ((audio_timestamp - audio_directory_timestamp) >= 3600)
    {
@@ -495,7 +495,7 @@ static void sd_card_open_file(uint32_t audio_timestamp)
    }
 
    // Open the requested file
-   static char file_name[32] = { 0 };
+   static char file_name[32];
    snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
 

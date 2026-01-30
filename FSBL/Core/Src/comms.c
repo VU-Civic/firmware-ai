@@ -17,7 +17,7 @@ __attribute__ ((section (".noncacheable"), aligned (4)))
 static uint8_t spi_buffer[2*sizeof(audio_packet_t)];
 
 __attribute__ ((section (".noncacheable")))
-static volatile uint8_t *incoming_data = 0;
+static volatile uint8_t *incoming_data;
 
 __attribute__ ((section (".noncacheable")))
 static volatile uint32_t data_receive_time;
@@ -292,6 +292,7 @@ static void to_host_i2c_init(void)
 void comms_init(void)
 {
    // Initialize MCU host communications in both directions
+   incoming_data = 0;
    to_host_i2c_init();
    from_host_spi_init();
 }

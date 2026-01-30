@@ -134,8 +134,8 @@ static void create_mel_filter_bank(void)
 static void compute_feature_column(const int16_t *audio_data, float *feature_column)
 {
    // Statically define all feature extraction buffers
-   static float input_signal[AI_FFT_WINDOW_SIZE], windowed_signal[AI_FFT_FILTER_SIZE] = { 0 };
-   static float fft_output[AI_FFT_FILTER_SIZE+2] = { 0 }, fft_magnitudes[(AI_FFT_FILTER_SIZE / 2) + 1];
+   static float input_signal[AI_FFT_WINDOW_SIZE], windowed_signal[AI_FFT_FILTER_SIZE];
+   static float fft_output[AI_FFT_FILTER_SIZE+2], fft_magnitudes[(AI_FFT_FILTER_SIZE / 2) + 1];
 
    // Convert the audio signal to a normalized floating point representation
    arm_q15_to_float(audio_data, input_signal, AI_FFT_WINDOW_SIZE);
@@ -248,8 +248,8 @@ void ai_init(void)
 void ai_process(volatile audio_packet_t *packet, uint8_t *output)
 {
    // Set up all necessary AI processing buffers
-   static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE] = { 0 };
-   static float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS] = { 0 };
+   static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE];
+   static float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS];
 
    // Enable the NPU, its cache, and necessary AXISRAM banks
    WRITE_REG(RCC->AHB5ENSR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
