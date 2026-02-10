@@ -288,6 +288,32 @@ void EXTI15_IRQHandler(void)
 }
 
 
+// Private Helper Functions --------------------------------------------------------------------------------------------
+
+static uint32_t get_risaf_max_addr(RISAF_TypeDef *risaf)
+{
+  uint32_t max_addr = 0U;
+  if      ((risaf == RISAF1_S)  || (risaf == RISAF1_NS))  { max_addr = RISAF1_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF2_S)  || (risaf == RISAF2_NS))  { max_addr = RISAF2_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF3_S)  || (risaf == RISAF3_NS))  { max_addr = RISAF3_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF4_S)  || (risaf == RISAF4_NS))  { max_addr = RISAF4_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF5_S)  || (risaf == RISAF5_NS))  { max_addr = RISAF5_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF6_S)  || (risaf == RISAF6_NS))  { max_addr = RISAF6_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF7_S)  || (risaf == RISAF7_NS))  { max_addr = RISAF7_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF8_S)  || (risaf == RISAF8_NS))  { max_addr = RISAF8_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF9_S)  || (risaf == RISAF9_NS))  { max_addr = RISAF9_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF11_S) || (risaf == RISAF11_NS)) { max_addr = RISAF11_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF12_S) || (risaf == RISAF12_NS)) { max_addr = RISAF12_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF13_S) || (risaf == RISAF13_NS)) { max_addr = RISAF13_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF14_S) || (risaf == RISAF14_NS)) { max_addr = RISAF14_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF15_S) || (risaf == RISAF15_NS)) { max_addr = RISAF15_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF21_S) || (risaf == RISAF21_NS)) { max_addr = RISAF21_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF22_S) || (risaf == RISAF22_NS)) { max_addr = RISAF22_LIMIT_ADDRESS_SPACE_SIZE; }
+  else if ((risaf == RISAF23_S) || (risaf == RISAF23_NS)) { max_addr = RISAF23_LIMIT_ADDRESS_SPACE_SIZE; }
+  return max_addr;
+}
+
+
 // Public API Functions ------------------------------------------------------------------------------------------------
 
 void system_init(void)
@@ -331,7 +357,7 @@ void system_init(void)
    // Set the interrupt group priority
    NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
-   // Enable the BSEC, SYSCFG, and CRC peripherals
+   // Enable the BSEC and SYSCFG peripherals
    WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_BSECEN);
    (void)READ_BIT(RCC->APB4ENR2, RCC_APB4ENR2_BSECEN);
    WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_SYSCFGEN);
@@ -440,12 +466,8 @@ void system_init(void)
    // Enable secure access for RIF-aware peripherals
    WRITE_REG(RCC->AHB3ENSR, RCC_AHB3ENR_RIFSCEN);
    (void)READ_BIT(RCC->AHB3ENR, RCC_AHB3ENR_RIFSCEN);
-   RISAF3->REG[0].CIDCFGR = 0x00FF00FF;
-   RISAF3->REG[0].ENDR = 0xFFFFFFFF;
-   RISAF3->REG[0].CFGR = 0x00000101;
-   RISAF3->REG[1].CIDCFGR = 0x00FF00FF;
-   RISAF3->REG[1].ENDR = 0xFFFFFFFF;
-   RISAF3->REG[1].CFGR = 0x00000001;
+   system_set_risaf_default(RISAF2);  // AXISRAM1
+   system_set_risaf_default(RISAF3);  // AXISRAM2
    const uint32_t master_cid = POSITION_VAL(RIF_CID_1);
    MODIFY_REG(RIFSC->RIMC_ATTRx[RIF_MASTER_INDEX_NPU], (RIFSC_RIMC_ATTRx_MCID | RIFSC_RIMC_ATTRx_MPRIV | RIFSC_RIMC_ATTRx_MSEC), ((master_cid << RIFSC_RIMC_ATTRx_MCID_Pos) | ((RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV) << RIFSC_RIMC_ATTRx_MSEC_Pos)));
    MODIFY_REG(RIFSC->RISC_SECCFGRx[RIF_RISC_PERIPH_INDEX_NPU >> RIF_PERIPH_REG_SHIFT], (1UL << (RIF_RISC_PERIPH_INDEX_NPU & RIF_PERIPH_BIT_POSITION)), (RIF_ATTRIBUTE_SEC << (RIF_RISC_PERIPH_INDEX_NPU & RIF_PERIPH_BIT_POSITION)));
@@ -550,6 +572,9 @@ void system_init(void)
    SCB_EnableICache();
    SCB_EnableDCache();
 
+   // Disable CPU deep-sleep mode
+   CLEAR_BIT(SCB->SCR, SCB_SCR_SLEEPDEEP_Msk);
+
    // Deactivate the SYSCFG clock
    (void)READ_REG(SYSCFG->INITSVTORCR);
    WRITE_REG(RCC->APB4ENCR2, RCC_APB4ENCR2_SYSCFGENC);
@@ -603,7 +628,7 @@ void system_sleep(void)
 void system_feed_watchdog(void)
 {
    // Reset the independent watchdog timer
-   WRITE_REG(IWDG->KR, IWDG_KEY_RELOAD);
+   ;//TODO:WRITE_REG(IWDG->KR, IWDG_KEY_RELOAD);
 }
 
 void system_delay(uint32_t ms)
@@ -618,4 +643,17 @@ void system_delay(uint32_t ms)
 uint32_t system_get_tick(void)
 {
    return sys_tick;
+}
+
+void system_set_risaf_default(RISAF_TypeDef *risaf)
+{
+  // Configure 2 fully overlapping regions, one for secure and one for non-secure accesses
+  WRITE_REG(risaf->REG[0].STARTR, 0x0);
+  WRITE_REG(risaf->REG[0].ENDR, get_risaf_max_addr(risaf));
+  WRITE_REG(risaf->REG[0].CIDCFGR, RIF_CID_MASK | (RIF_CID_MASK << RISAF_REGx_CIDCFGR_WRENC0_Pos));
+  WRITE_REG(risaf->REG[0].CFGR, RISAF_FILTER_ENABLE | (RIF_ATTRIBUTE_SEC << RISAF_REGx_CFGR_SEC_Pos));
+  WRITE_REG(risaf->REG[1].STARTR, 0x0);
+  WRITE_REG(risaf->REG[1].ENDR, get_risaf_max_addr(risaf));
+  WRITE_REG(risaf->REG[1].CIDCFGR, RIF_CID_MASK | (RIF_CID_MASK << RISAF_REGx_CIDCFGR_WRENC0_Pos));
+  WRITE_REG(risaf->REG[1].CFGR, RISAF_FILTER_ENABLE | (RIF_ATTRIBUTE_NSEC << RISAF_REGx_CFGR_SEC_Pos));
 }

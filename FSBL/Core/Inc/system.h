@@ -10,5 +10,6 @@ void system_sleep(void);
 void system_feed_watchdog(void);
 void system_delay(uint32_t ms);
 uint32_t system_get_tick(void);
+void system_set_risaf_default(RISAF_TypeDef *risaf);
 
 #endif  // #ifndef __SYSTEM_HEADER_H__

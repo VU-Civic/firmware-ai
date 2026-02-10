@@ -446,6 +446,9 @@ void flash_init(void)
       MODIFY_REG(XSPI_PORT->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
    }
 
+   // Enable secure access for the XSPI2 peripheral
+   system_set_risaf_default(RISAF12);
+
    // Configure the memory type, device size, chip-select high time, clock mode, and FIFO threshold
    MODIFY_REG(XSPI2->DCR1, (XSPI_DCR1_MTYP | XSPI_DCR1_DEVSIZE | XSPI_DCR1_CSHT | XSPI_DCR1_FRCK | XSPI_DCR1_CKMODE), (HAL_XSPI_MEMTYPE_MACRONIX | (HAL_XSPI_SIZE_256MB << XSPI_DCR1_DEVSIZE_Pos) | ((2U - 1U) << XSPI_DCR1_CSHT_Pos) | HAL_XSPI_CLOCK_MODE_0));
    CLEAR_BIT(XSPI2->DCR2, XSPI_DCR2_WRAPSIZE);

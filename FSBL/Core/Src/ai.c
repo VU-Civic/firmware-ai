@@ -203,6 +203,14 @@ void ai_init(void)
    CLEAR_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
    CLEAR_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
 
+   // Enable secure access for all AI peripherals
+   system_set_risaf_default(RISAF4);  // NPU MST0
+   system_set_risaf_default(RISAF5);  // NPU MST1
+   system_set_risaf_default(RISAF6);  // AXISRAM3,4,5,6
+   system_set_risaf_default(RISAF7);  // FLEXMEM
+   system_set_risaf_default(RISAF8);  // NPU CACHE
+   system_set_risaf_default(RISAF15); // NPU CACHE Config
+
    // Keep relevant IPs enabled during sleep so they can wake up the CPU
    WRITE_REG(RCC->MISCLPENSR, (RCC_MISCENR_DBGEN | RCC_MISCENR_XSPIPHYCOMPEN));
    (void)READ_REG(RCC->MISCLPENR);
@@ -317,10 +325,6 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    }
 #endif  // #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX
 
-   // Invalidate all AI data caches
-   LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_in, data_in_len);
-   //LL_ATON_Cache_NPU_Invalidate_Range(); // TODO: IS THIS NO LONGER NEEDED??
-
    // Run the inference loop and reset the AI runtime
    LL_ATON_RT_RetValues_t ll_aton_rt_ret = LL_ATON_RT_DONE;
    do
@@ -331,13 +335,17 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
    LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
 
-   // Invalidate the output cache and process the classification output
-   // TODO: NOT NEEDED? LL_ATON_Cache_MCU_Clean_Invalidate_Range((uintptr_t)data_out, data_out_len);
+   // Process the classification output
+   min_value = 0.0f;
    max_value = (data_out[0] > data_out[1]) ? data_out[0] : data_out[1];
-   const float sum_exp = expf(data_out[0] - max_value) + expf(data_out[1] - max_value);
    for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
    {
-      const float out_float = data_out[i] / sum_exp;
+      data_out[i] = expf(data_out[i] - max_value);
+      min_value += data_out[i];
+   }
+   for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
+   {
+      const float out_float = 100.0f * data_out[i] / min_value;
       output[i] = (uint8_t)((out_float > 100.0f) ? 100.0f : ((out_float < 0.0f) ? 0.0f : out_float));
    }
 

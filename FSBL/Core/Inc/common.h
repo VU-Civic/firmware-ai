@@ -25,7 +25,7 @@
 
 #define AI_NUM_CLASSES                                2
 #define AI_GUNSHOT_CLASS_INDEX                        0
-#define AI_STORAGE_THRESHOLD                          0.2f
+#define AI_STORAGE_THRESHOLD                          20
 
 #define STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS            3
 
