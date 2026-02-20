@@ -60,3 +60,4 @@ ExtMemLoader/Debug/
 ExtMemLoader/Release/
 FSBL/Debug/
 FSBL/Release/
+FSBL/SdWriter/

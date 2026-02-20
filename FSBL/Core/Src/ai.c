@@ -207,7 +207,6 @@ void ai_init(void)
    system_set_risaf_default(RISAF4);  // NPU MST0
    system_set_risaf_default(RISAF5);  // NPU MST1
    system_set_risaf_default(RISAF6);  // AXISRAM3,4,5,6
-   system_set_risaf_default(RISAF7);  // FLEXMEM
    system_set_risaf_default(RISAF8);  // NPU CACHE
    system_set_risaf_default(RISAF15); // NPU CACHE Config
 

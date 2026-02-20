@@ -32,11 +32,6 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>Core/Inc/network.h</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/AiModel/network.h</locationURI>
-		</link>
-		<link>
 			<name>Core/Src/civicalert.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/AiModel/civicalert.c</locationURI>

@@ -7,11 +7,17 @@
 
 #define I2C_DEVICE_ADDRESS                144
 
+#ifdef PACKET_FULL_AUDIO
+#define AUDIO_DMA_BUFFER_SIZE             (sizeof(spi_buffer) / 2)
+#else
+#define AUDIO_DMA_BUFFER_SIZE             (sizeof(spi_buffer))
+#endif
+
 
 // Static Variables for Host Communications ----------------------------------------------------------------------------
 
 __attribute__ ((section (".noncacheable"), aligned (4)))
-static DMA_NodeTypeDef from_host_spi_dma_nodes[1];
+static DMA_NodeTypeDef from_host_spi_dma_nodes;
 
 __attribute__ ((section (".noncacheable"), aligned (4)))
 static uint8_t spi_buffer[2*sizeof(audio_packet_t)];
@@ -29,13 +35,13 @@ static void spi_dma_setup(void)
 {
    // Explicitly configure all SPI DMA registers
    MODIFY_REG(GPDMA1_Channel0->CCR, (DMA_CCR_PRIO | DMA_CCR_LAP | DMA_CCR_LSM), (DMA_HIGH_PRIORITY | DMA_LSM_FULL_EXECUTION | DMA_LINK_ALLOCATED_PORT1));
-   WRITE_REG(GPDMA1_Channel0->CLBAR, ((uint32_t)&from_host_spi_dma_nodes[0] & DMA_CLBAR_LBA));
-   WRITE_REG(GPDMA1_Channel0->CTR1, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR1_DEFAULT_OFFSET]);
-   WRITE_REG(GPDMA1_Channel0->CTR2, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR2_DEFAULT_OFFSET]);
-   WRITE_REG(GPDMA1_Channel0->CSAR, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CSAR_DEFAULT_OFFSET]);
-   WRITE_REG(GPDMA1_Channel0->CDAR, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CDAR_DEFAULT_OFFSET]);
-   WRITE_REG(GPDMA1_Channel0->CBR1, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CBR1_DEFAULT_OFFSET]);
-   WRITE_REG(GPDMA1_Channel0->CLLR, from_host_spi_dma_nodes[0].LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CLBAR, ((uint32_t)&from_host_spi_dma_nodes & DMA_CLBAR_LBA));
+   WRITE_REG(GPDMA1_Channel0->CTR1, from_host_spi_dma_nodes.LinkRegisters[NODE_CTR1_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CTR2, from_host_spi_dma_nodes.LinkRegisters[NODE_CTR2_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CSAR, from_host_spi_dma_nodes.LinkRegisters[NODE_CSAR_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CDAR, from_host_spi_dma_nodes.LinkRegisters[NODE_CDAR_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CBR1, from_host_spi_dma_nodes.LinkRegisters[NODE_CBR1_DEFAULT_OFFSET]);
+   WRITE_REG(GPDMA1_Channel0->CLLR, from_host_spi_dma_nodes.LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET]);
    WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT | DMA_FLAG_DTE | DMA_FLAG_SUSP));
    SET_BIT(GPDMA1_Channel0->CCR, (DMA_IT_TC | DMA_FLAG_HT | DMA_IT_DTE | DMA_IT_SUSP | DMA_CCR_EN));
 }
@@ -59,12 +65,30 @@ void GPDMA1_Channel0_IRQHandler(void)
    if (READ_BIT(GPDMA1_Channel0->CSR, (DMA_FLAG_TC | DMA_FLAG_HT)))
    {
       // Update the pointer to the current incoming data and clear the transfer-complete flag
-      incoming_data = READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC) ? &spi_buffer[sizeof(spi_buffer) / 2] : &spi_buffer[0];
+#ifdef PACKET_FULL_AUDIO
+      uint8_t *source, *destination;
+      if (READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC))
+      {
+         source = &spi_buffer[AUDIO_DMA_BUFFER_SIZE / 2];
+         destination = &spi_buffer[AUDIO_DMA_BUFFER_SIZE * 3 / 2];
+         incoming_data = &spi_buffer[AUDIO_DMA_BUFFER_SIZE];
+         data_receive_time = DWT->CYCCNT;
+      }
+      else
+      {
+         source = &spi_buffer[0];
+         destination = &spi_buffer[AUDIO_DMA_BUFFER_SIZE];
+      }
+      WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
+      memcpy(destination, source, AUDIO_DMA_BUFFER_SIZE / 2);
+#else
+      incoming_data = READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC) ? &spi_buffer[AUDIO_DMA_BUFFER_SIZE / 2] : &spi_buffer[0];
       WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
       data_receive_time = DWT->CYCCNT;
+#endif
 
-      // Validate the packet delimiter and trigger automatic re-initialization if there is an error
-      if ((incoming_data[0] != packet_delimiter[0]) || (incoming_data[1] != packet_delimiter[1]) || (incoming_data[2] != packet_delimiter[2]) || (incoming_data[3] != packet_delimiter[3]))
+      // Validate the packet delimiters and trigger automatic re-initialization if there is an error
+      if (incoming_data && ((incoming_data[0] != packet_delimiter[0]) || (incoming_data[1] != packet_delimiter[1]) || (incoming_data[2] != packet_delimiter[2]) || (incoming_data[3] != packet_delimiter[3])))
       {
          SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_SUSP);
          incoming_data = 0;
@@ -195,13 +219,13 @@ static void from_host_spi_init(void)
    SET_BIT(GPDMA1->SECCFGR, channel_idx);
 
    // Set up a DMA linked list to continually receive in a circular buffer
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR1_DEFAULT_OFFSET] = DMA_DINC_INCREMENTED | DMA_DEST_DATAWIDTH_WORD | DMA_SINC_FIXED | DMA_SRC_DATAWIDTH_WORD | DMA_CTR1_SSEC | DMA_CTR1_DSEC | DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CTR2_DEFAULT_OFFSET] = DMA_TCEM_EACH_LL_ITEM_TRANSFER | GPDMA1_REQUEST_SPI1_RX | DMA_NORMAL;
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CBR1_DEFAULT_OFFSET] = sizeof(spi_buffer);
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CSAR_DEFAULT_OFFSET] = (uint32_t)&SPI1->RXDR;
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CDAR_DEFAULT_OFFSET] = (uint32_t)&spi_buffer[0];
-   from_host_spi_dma_nodes[0].LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET] = ((uint32_t)&from_host_spi_dma_nodes[0] & DMA_CLLR_LA) | DMA_CLLR_UT1 | DMA_CLLR_UT2 | DMA_CLLR_UB1 | DMA_CLLR_UDA | DMA_CLLR_USA | DMA_CLLR_ULL;
-   from_host_spi_dma_nodes[0].NodeInfo = DMA_GPDMA_LINEAR_NODE | (NODE_CLLR_LINEAR_DEFAULT_OFFSET << NODE_CLLR_IDX_POS);
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CTR1_DEFAULT_OFFSET] = DMA_DINC_INCREMENTED | DMA_DEST_DATAWIDTH_WORD | DMA_SINC_FIXED | DMA_SRC_DATAWIDTH_WORD | DMA_CTR1_SSEC | DMA_CTR1_DSEC | DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CTR2_DEFAULT_OFFSET] = DMA_TCEM_EACH_LL_ITEM_TRANSFER | GPDMA1_REQUEST_SPI1_RX | DMA_NORMAL;
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CBR1_DEFAULT_OFFSET] = AUDIO_DMA_BUFFER_SIZE;
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CSAR_DEFAULT_OFFSET] = (uint32_t)&SPI1->RXDR;
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CDAR_DEFAULT_OFFSET] = (uint32_t)&spi_buffer[0];
+   from_host_spi_dma_nodes.LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET] = ((uint32_t)&from_host_spi_dma_nodes & DMA_CLLR_LA) | DMA_CLLR_UT1 | DMA_CLLR_UT2 | DMA_CLLR_UB1 | DMA_CLLR_UDA | DMA_CLLR_USA | DMA_CLLR_ULL;
+   from_host_spi_dma_nodes.NodeInfo = DMA_GPDMA_LINEAR_NODE | (NODE_CLLR_LINEAR_DEFAULT_OFFSET << NODE_CLLR_IDX_POS);
 
    // Reset the SPI DMA peripheral
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
@@ -295,6 +319,12 @@ void comms_init(void)
    incoming_data = 0;
    to_host_i2c_init();
    from_host_spi_init();
+}
+
+uint8_t comms_data_available(void)
+{
+   // Return whether this is any unread data available
+   return (incoming_data != 0);
 }
 
 void comms_transmit(uint8_t *data, uint8_t data_len)
