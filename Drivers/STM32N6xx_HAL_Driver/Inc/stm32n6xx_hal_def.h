@@ -194,18 +194,30 @@ typedef enum
 #pragma section=".noncacheable"
 #define __NON_CACHEABLE_SECTION_BEGIN ((uint32_t) __sfb(".noncacheable"))
 #define __NON_CACHEABLE_SECTION_END   ((uint32_t) __sfe(".noncacheable"))
+#pragma section=".nonessential"
+#define __NON_ESSENTIAL_SECTION_BEGIN ((uint32_t) __sfb(".nonessential"))
+#define __NON_ESSENTIAL_SECTION_END   ((uint32_t) __sfe(".nonessential"))
 #elif defined(__ARMCC_VERSION)
 extern uint32_t Image$$RW_NONCACHEABLEBUFFER$$Base;
 extern uint32_t Image$$RW_NONCACHEABLEBUFFER$$Limit;
 #define __NON_CACHEABLE_SECTION_BEGIN ((uint32_t) &Image$$RW_NONCACHEABLEBUFFER$$Base)
 #define __NON_CACHEABLE_SECTION_END   ((uint32_t) &Image$$RW_NONCACHEABLEBUFFER$$Limit-1)
+extern uint32_t Image$$RW_NONESSENTIALBUFFER$$Base;
+extern uint32_t Image$$RW_NONESSENTIALBUFFER$$Limit;
+#define __NON_ESSENTIAL_SECTION_BEGIN ((uint32_t) &Image$$RW_NONESSENTIALBUFFER$$Base)
+#define __NON_ESSENTIAL_SECTION_END   ((uint32_t) &Image$$RW_NONESSENTIALBUFFER$$Limit-1)
 #elif defined(__GNUC__)
 extern uint32_t __snoncacheable;
 extern uint32_t __enoncacheable;
 #define __NON_CACHEABLE_SECTION_BEGIN ((uint32_t) &__snoncacheable)
 #define __NON_CACHEABLE_SECTION_END   ((uint32_t) &__enoncacheable)
+extern uint32_t __snonessential;
+extern uint32_t __enonessential;
+#define __NON_ESSENTIAL_SECTION_BEGIN ((uint32_t) &__snonessential)
+#define __NON_ESSENTIAL_SECTION_END   ((uint32_t) &__enonessential)
 #endif /* defined(__ICCARM__) */
 #define __NON_CACHEABLE __attribute__((section(".noncacheable")))
+#define __NON_ESSENTIAL __attribute__((section(".nonessential")))
 
 #ifdef __cplusplus
 }

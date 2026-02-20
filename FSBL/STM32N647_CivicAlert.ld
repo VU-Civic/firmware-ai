@@ -13,6 +13,7 @@ MEMORY
 {
   ROM (xrw)    : ORIGIN = 0x34180400,   LENGTH = 511K
   RAM (xrw)    : ORIGIN = 0x34100000,   LENGTH = 512K
+  FLEXRAM (rw) : ORIGIN = 0x34000000,   LENGTH = 400K
 }
 
 /* Sections */
@@ -138,13 +139,13 @@ SECTIONS
   .noncacheable (NOLOAD) :
   {
     . = ALIGN(8);
-    __snoncacheable = .;/* create symbol for start of section */
+    __snoncacheable = .;  /* create symbol for start of section */
     KEEP(*(.noncacheable))
     . = ALIGN(8);
     __enoncacheable = .;  /* create symbol for end of section */
     _ebss = .;            /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } > RAM
+  } >RAM
 
   /* User_heap_stack section, used to check that there is enough "RAM" type memory left */
   ._user_heap_stack :
@@ -156,6 +157,16 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >RAM
+  
+  /* Extra non-essential storage section */
+  .nonessential (NOLOAD) :
+  {
+    . = ALIGN(4);
+    __snonessential = .;  /* create symbol for start of section */
+    KEEP(*(.nonessential))
+    . = ALIGN(4);
+    __enonessential = .;  /* create symbol for end of section */
+  } >FLEXRAM
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :

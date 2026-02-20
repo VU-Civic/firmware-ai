@@ -54,6 +54,20 @@ LoopFillZerobss:
   cmp r2, r4
   bcc FillZerobss
 
+/* Zero fill the nonessential segment. */
+  ldr r2, =__snonessential
+  ldr r4, =__enonessential
+  movs r3, #0
+  b LoopFillZeroNonessential
+
+FillZeroNonessential:
+  str  r3, [r2]
+  adds r2, r2, #4
+
+LoopFillZeroNonessential:
+  cmp r2, r4
+  bcc FillZeroNonessential
+
 /* Call static constructors */
   bl __libc_init_array
 /* Call the application's entry point.*/
