@@ -471,15 +471,21 @@ static void sd_card_open_file(uint32_t audio_timestamp)
    if ((audio_timestamp - audio_directory_timestamp) >= 3600)
    {
       // Generate a new directory name from the current date and time
+      static FILINFO file_info;
+      curr_time->tm_min = curr_time->tm_sec = 0;
       memset(audio_directory, 0, sizeof(audio_directory));
       strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       audio_directory_timestamp = (uint32_t)mktime(curr_time);
    }
 
@@ -566,15 +572,21 @@ static void sd_card_open_file(uint32_t audio_timestamp)
    if ((audio_timestamp - audio_directory_timestamp) >= 3600)
    {
       // Generate a new directory name from the current date and time
+      static FILINFO file_info;
+      curr_time->tm_min = curr_time->tm_sec = 0;
       memset(audio_directory, 0, sizeof(audio_directory));
       strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
-      f_mkdir(audio_directory);
+      if (f_stat(audio_directory, &file_info) != FR_OK)
+         f_mkdir(audio_directory);
       audio_directory_timestamp = (uint32_t)mktime(curr_time);
    }
 
