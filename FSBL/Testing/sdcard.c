@@ -4,6 +4,8 @@
 #include "storage.h"
 #include "system.h"
 
+#define CLIP_LENGTH_SECONDS   60
+
 int main(void)
 {
    // Initialize the system and peripherals
@@ -14,6 +16,7 @@ int main(void)
    ai_init();
 
    // Finalize the system configuration
+   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
    volatile audio_packet_t *audio_data = 0;
    system_finalize();
 
@@ -47,7 +50,7 @@ int main(void)
       if (audio_data)
       {
          // Always try to create a new SD card audio file (will only succeed if previous file was closed)
-         storage_open_audio_file((uint32_t)audio_data->timestamp);
+         storage_open_audio_file(audio_data, &ai_results, CLIP_LENGTH_SECONDS);
          storage_write_audio_file(audio_data->audio);
       }
 

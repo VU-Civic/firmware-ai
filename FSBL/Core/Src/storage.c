@@ -21,7 +21,6 @@
 #define FLAC_ENCODER_PARTITION_ORDER          3
 #define FLAC_ENCODER_BLOCK_SIZE               4096
 
-#define AUDIO_CLIP_MIN_NUM_SAMPLES            (STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS * AUDIO_PACKET_SAMPLE_RATE)
 #define AUDIO_CLIP_HISTORY_NUM_SAMPLES        (STORAGE_AUDIO_CLIP_HISTORY_SECONDS * AUDIO_PACKET_SAMPLE_RATE)
 #define SD_CARD_BUFFER_NUM_BYTES              16384
 
@@ -42,7 +41,7 @@ static volatile uint8_t audio_file_open;
 static volatile DSTATUS sd_card_status;
 static volatile uint32_t sd_xfer_context, sd_result_ready, sd_timed_out;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
-static uint32_t samples_written, output_buffer_len, timeout_num_cycles;
+static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
 static sd_card_details_t sd_card_details;
 static float previous_timestamp;
 
@@ -395,6 +394,30 @@ static uint8_t enable_sd_card(void)
    return 1;
 }
 
+static void sd_card_write_audio_metadata(volatile audio_packet_t *audio_data, const ai_data_t *ai_results)
+{
+   UINT data_written;
+   char line_buffer[32];
+   int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %.3f\n", (float)audio_data->timestamp);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Probability: %u%%\n", (unsigned int)ai_results->class_probabilities[0]);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lat: %.9f\n", (float)audio_data->lat);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lon: %.9f\n", (float)audio_data->lon);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Ht: %.3f\n", (float)audio_data->ht);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q1: %ld\n", (int32_t)audio_data->q1);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q2: %ld\n", (int32_t)audio_data->q2);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q3: %ld\n", (int32_t)audio_data->q3);
+   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   f_close(&audio_file);
+   audio_file_open = false;
+}
+
 #ifdef USE_FLAC_ENCODER
 
 static void sd_card_write_bytes(const int8_t *data, uint32_t data_len)
@@ -449,7 +472,7 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static void sd_card_open_file(uint32_t audio_timestamp)
+static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Do not continue if the SD card is not initialized
    if (!sd_card_initialized)
@@ -489,8 +512,18 @@ static void sd_card_open_file(uint32_t audio_timestamp)
       audio_directory_timestamp = (uint32_t)mktime(curr_time);
    }
 
-   // Open the requested file
+   // Create a file to contain the corresponding audio metadata
    static char file_name[32];
+   snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
+   audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
+   if (audio_file_open)
+   {
+      sd_card_write_audio_metadata(audio_data, ai_results);
+      f_close(&audio_file);
+      audio_file_open = false;
+   }
+
+   // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
 
@@ -498,6 +531,7 @@ static void sd_card_open_file(uint32_t audio_timestamp)
    if (audio_file_open)
    {
       // Reset the FLAC encoder
+      min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
       sd_write_index = pcm_write_index = samples_written = 0;
       flac_encoder.samplecount = TFLAC_U64_ZERO;
       flac_encoder.frameno = flac_encoder.verbatim_subframe_bits = 0;
@@ -532,7 +566,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
          sd_card_write_bytes(output_buffer, bytes_written);
 
          // Determine whether the full audio clip has been written
-         if (samples_written >= AUDIO_CLIP_MIN_NUM_SAMPLES)
+         if (samples_written >= min_clip_samples)
             sd_card_close_audio_file();
       }
    }
@@ -557,7 +591,7 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static void sd_card_open_file(uint32_t audio_timestamp)
+static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Do not continue if the SD card is not initialized or an audio file is already open
    if (!sd_card_initialized || audio_file_open)
@@ -590,8 +624,18 @@ static void sd_card_open_file(uint32_t audio_timestamp)
       audio_directory_timestamp = (uint32_t)mktime(curr_time);
    }
 
-   // Open the requested file
+   // Create a file to contain the corresponding audio metadata
    static char file_name[32];
+   snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
+   audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
+   if (audio_file_open)
+   {
+      sd_card_write_audio_metadata(audio_data, ai_results);
+      f_close(&audio_file);
+      audio_file_open = false;
+   }
+
+   // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.wav", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
 
@@ -620,6 +664,7 @@ static void sd_card_open_file(uint32_t audio_timestamp)
       f_write(&audio_file, &field, 2, &data_written);
       f_write(&audio_file, "data", 4, &data_written);
       f_write(&audio_file, &field, 4, &data_written);
+      min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
       samples_written = 0;
    }
 }
@@ -647,7 +692,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 
       // Determine whether a full audio clip has been written
       samples_written += AUDIO_PACKET_NUM_SAMPLES;
-      if (samples_written >= AUDIO_CLIP_MIN_NUM_SAMPLES)
+      if (samples_written >= min_clip_samples)
          sd_card_close_audio_file();
    }
 }
@@ -991,17 +1036,18 @@ void storage_handle_sd_card_state_change(void)
    }
 }
 
-void storage_open_audio_file(uint32_t audio_timestamp)
+void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Keep track of the most recently received audio timestamp
+   const float audio_timestamp = (float)audio_data->timestamp;
    if (audio_timestamp <= previous_timestamp)
       previous_timestamp += 1.0f / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES);
    else
-      previous_timestamp = (float)audio_timestamp;
+      previous_timestamp = audio_timestamp;
 
    // Open a new file on the SD card
    sd_timed_out = 0;
-   sd_card_open_file((uint32_t)previous_timestamp);
+   sd_card_open_file((uint32_t)previous_timestamp, audio_data, ai_results, clip_length_seconds);
 }
 
 void storage_write_audio_file(volatile int16_t *audio_data)

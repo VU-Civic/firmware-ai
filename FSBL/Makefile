@@ -63,7 +63,7 @@ OBJECTS := $(SOURCES:%.c=$(BUILD)/%.o) $(CMSIS_DSP_SOURCES:%.c=$(BUILD)/%.o) $(B
 CFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) -std=gnu11 $(DEFINES) $(INCLUDES) -flax-vector-conversions -fno-short-wchar -funsigned-char -fshort-enums -ffunction-sections -fdata-sections -falign-functions=16 -Wall -fstack-usage -mcmse -MMD -MP
 CFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb
 LFLAGS  = -mcpu=$(CPU) -mtune=$(CPU) --specs=nosys.specs -Wl,-Map=$(MAP_FILE) -Wl,--gc-sections -static -Wl,--cmse-implib -Wl,--out-implib=$(BUILD)/secure_nsclib.o
-LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -z noexecstack -Wl,--start-group -lc -lm -Wl,--end-group
+LFLAGS += --specs=nano.specs -mfpu=$(FPU) -mfloat-abi=$(FABI) -mthumb -z noexecstack -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 
 
 #### Build Targets ####
@@ -79,7 +79,7 @@ debug: directories $(EXECUTABLE) secondary-outputs
 	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s --align
 
 sd: CFLAGS += -Ofast
-sd: DEFINES += -DPACKET_FULL_AUDIO -DSTORAGE_AUDIO_CLIP_MIN_NUM_SECONDS=60
+sd: DEFINES += -DPACKET_FULL_AUDIO
 sd: directories $(SD_EXECUTABLE) $(SD_BINARY)
 	$(SIGN) -bin $(SD_BINARY) -nk -of 0x80000000 -t fsbl -o $(SD_SIGNED) -hv 2.3 -dump $(SD_SIGNED) -s --align
 	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(SD_SIGNED) 0x70000000 -v
