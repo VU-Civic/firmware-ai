@@ -35,16 +35,11 @@
 #define AI_FIRMWARE_VERSION_LENGTH                    8
 #define AI_NUM_CLASSES                                2
 #define AI_GUNSHOT_CLASS_INDEX                        0
-#define AI_STORAGE_THRESHOLD                          20
 
 #define CELL_IMEI_LENGTH                              15
 #define CELL_IMSI_LENGTH                              15
 
 #define STORAGE_AUDIO_CLIP_HISTORY_SECONDS            1
-
-#ifndef STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS
-#define STORAGE_AUDIO_CLIP_MIN_NUM_SECONDS            3
-#endif
 
 #define USE_SETJMP_FOR_SD_STORAGE                     0
 
@@ -64,6 +59,12 @@ typedef struct
    uint16_t pin;
 } gpio_pin_t;
 
+typedef struct __attribute__ ((__packed__))
+{
+   uint8_t storage_classification_threshold;
+   uint8_t audio_clip_length_seconds;
+} ai_config_t;
+
 typedef struct __attribute__ ((__packed__, aligned(4)))
 {
    uint8_t start_delimiter[4];
@@ -72,7 +73,8 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
    float lat, lon, ht;
    int32_t q1, q2, q3;
    char imei[CELL_IMEI_LENGTH+1], imsi[CELL_IMSI_LENGTH+1];
-   uint8_t reserved[8];
+   ai_config_t ai_config;
+   uint8_t reserved[6];
    uint8_t end_delimiter[4];
 } audio_packet_t;
 
