@@ -1,3 +1,4 @@
+#include "ai.h"
 #include "comms.h"
 #include "flash.h"
 #include "storage.h"
@@ -12,8 +13,10 @@ int main(void)
    flash_init();
    storage_init();
    comms_init();
+   ai_init();
 
    // Finalize the system configuration
+   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
    volatile audio_packet_t *audio_data = 0;
    system_finalize();
 
@@ -28,8 +31,7 @@ int main(void)
    // Test the SD card storage
    success = success && storage_test_peripheral();
 
-   // Loop forever testing SPI data communications
-   ai_data_t success_packet = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
+   // Loop forever testing SPI and I2C data communications
    while (1)
    {
       __disable_irq();
@@ -37,8 +39,8 @@ int main(void)
       if (audio_data)
       {
          __enable_irq();
-         success_packet.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
-         comms_transmit((uint8_t*)&success_packet, sizeof(success_packet));
+         ai_results.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
+         comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
       }
       else
          system_sleep();
