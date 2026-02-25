@@ -1063,7 +1063,7 @@ void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_
 {
    // Keep track of the most recently received audio timestamp
    const double audio_timestamp = audio_data->timestamp;
-   if (audio_timestamp <= previous_timestamp)
+   if ((audio_timestamp < 1000.0) && (audio_timestamp <= previous_timestamp))
       previous_timestamp += 1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES);
    else
       previous_timestamp = audio_timestamp;
