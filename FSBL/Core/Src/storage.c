@@ -25,7 +25,11 @@
 #define SD_CARD_BUFFER_NUM_BYTES              16384
 
 #define SDMMC_CLK                             200000000U
+#ifdef SD_LOW_VOLTAGE_SIGNALING
 #define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR50_SWITCH_PATTERN
+#else
+#define SD_MAX_BUS_SPEED_MODE                 SDMMC_SDR25_SWITCH_PATTERN
+#endif
 
 typedef struct
 {
@@ -175,6 +179,8 @@ static uint8_t enable_sd_card(void)
          }
       }
 
+#ifdef SD_LOW_VOLTAGE_SIGNALING
+
       // Attempt to lower the signaling voltage for SDXC cards
       if (!voltage_attempt && (sd_card_details.card_type == CARD_SDHC_SDXC))
       {
@@ -214,6 +220,10 @@ static uint8_t enable_sd_card(void)
             voltage_attempt = 2;
          }
       }
+
+#else
+      voltage_attempt = 2;
+#endif  // #ifdef SD_LOW_VOLTAGE_SIGNALING
    }
 
    // Retrieve the SD card's relative address, class, and card-specific data

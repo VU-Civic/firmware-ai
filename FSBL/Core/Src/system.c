@@ -380,7 +380,7 @@ void system_init(void)
    uint32_t fuse_data = BSEC->FVRw[HSLV_OTP];
 
    // Blow all necessary fuses
-   const uint32_t expected_data = VDDIO2_HSLV_MASK | VDDIO3_HSLV_MASK | VDDIO4_HSLV_MASK;
+   const uint32_t expected_data = VDDIO2_HSLV_MASK | VDDIO3_HSLV_MASK; // TODO: BLOW VDDIO4 IF STM SAYS IT'S OKAY (ALSO RE-ENABLE FASTER SD CARD WRITING) | VDDIO4_HSLV_MASK;
    if ((fuse_data & expected_data) != expected_data)
    {
       uint8_t success = 0;
