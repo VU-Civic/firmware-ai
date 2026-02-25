@@ -41,6 +41,7 @@ int main(void)
          __enable_irq();
          ai_results.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
+         system_feed_watchdog();
       }
       else
          system_sleep();
