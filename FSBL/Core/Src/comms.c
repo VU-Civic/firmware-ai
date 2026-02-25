@@ -1,5 +1,6 @@
 // Header Inclusions ---------------------------------------------------------------------------------------------------
 
+#include <arm_math.h>
 #include "comms.h"
 
 
@@ -61,7 +62,7 @@ static void i2c_dma_setup(void)
 void GPDMA1_Channel0_IRQHandler(void)
 {
    // Check if a full data packet transfer has completed
-   static const uint8_t packet_delimiter[] = AUDIO_PACKET_START_DELIMITER;
+   static const uint8_t packet_start_delimiter[] = AUDIO_PACKET_START_DELIMITER, packet_end_delimiter[] = AUDIO_PACKET_END_DELIMITER;
    if (READ_BIT(GPDMA1_Channel0->CSR, (DMA_FLAG_TC | DMA_FLAG_HT)))
    {
       // Update the pointer to the current incoming data and clear the transfer-complete flag
@@ -80,7 +81,7 @@ void GPDMA1_Channel0_IRQHandler(void)
          destination = &spi_buffer[AUDIO_DMA_BUFFER_SIZE];
       }
       WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
-      memcpy(destination, source, AUDIO_DMA_BUFFER_SIZE / 2);
+      arm_copy_q7((int8_t*)source, (int8_t*)destination, AUDIO_DMA_BUFFER_SIZE / 2);
 #else
       incoming_data = READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_TC) ? &spi_buffer[AUDIO_DMA_BUFFER_SIZE / 2] : &spi_buffer[0];
       WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT));
@@ -88,7 +89,11 @@ void GPDMA1_Channel0_IRQHandler(void)
 #endif
 
       // Validate the packet delimiters and trigger automatic re-initialization if there is an error
-      if (incoming_data && ((incoming_data[0] != packet_delimiter[0]) || (incoming_data[1] != packet_delimiter[1]) || (incoming_data[2] != packet_delimiter[2]) || (incoming_data[3] != packet_delimiter[3])))
+      if (incoming_data &&
+            ((incoming_data[0] != packet_start_delimiter[0]) || (incoming_data[1] != packet_start_delimiter[1]) ||
+             (incoming_data[2] != packet_start_delimiter[2]) || (incoming_data[3] != packet_start_delimiter[3]) ||
+             (incoming_data[sizeof(audio_packet_t)-4] != packet_end_delimiter[0]) || (incoming_data[sizeof(audio_packet_t)-3] != packet_end_delimiter[1]) ||
+             (incoming_data[sizeof(audio_packet_t)-2] != packet_end_delimiter[2]) || (incoming_data[sizeof(audio_packet_t)-1] != packet_end_delimiter[3])))
       {
          SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_SUSP);
          incoming_data = 0;
