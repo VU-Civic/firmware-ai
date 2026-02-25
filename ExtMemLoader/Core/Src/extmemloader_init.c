@@ -37,6 +37,11 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+#define HSLV_OTP 124
+#define VDDIO2_HSLV_MASK (1U<<16)
+#define VDDIO3_HSLV_MASK (1U<<15)
+#define VDDIO4_HSLV_MASK (1U<<14)
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,6 +61,7 @@ XSPI_HandleTypeDef hxspi2;
 static void MX_GPIO_Init(void);
 static void MX_XSPI2_Init(void);
 static void MX_XSPIM_Init(void);
+static void MX_BSEC_Init(void);
 static void SystemClock_Config(void);
 
 /* USER CODE BEGIN PFP */
@@ -113,6 +119,8 @@ uint32_t extmemloader_Init()
 
   /* Initialize all configured peripherals */
 
+  MX_BSEC_Init();
+
   MX_GPIO_Init();
 
   MX_XSPI2_Init();
@@ -140,6 +148,13 @@ void SystemClock_Config(void)
   /** Configure the System Power Supply
   */
   if (HAL_PWREx_ConfigSupply(PWR_EXTERNAL_SOURCE_SUPPLY) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the main internal regulator output voltage
+  */
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -178,11 +193,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_NONE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL1.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL1.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL1.PLLM = 2;
-  RCC_OscInitStruct.PLL1.PLLN = 75;
+  RCC_OscInitStruct.PLL1.PLLN = 25;
   RCC_OscInitStruct.PLL1.PLLFractional = 0;
   RCC_OscInitStruct.PLL1.PLLP1 = 1;
   RCC_OscInitStruct.PLL1.PLLP2 = 1;
@@ -208,18 +224,70 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
   RCC_ClkInitStruct.APB5CLKDivider = RCC_APB5_DIV1;
   RCC_ClkInitStruct.IC1Selection.ClockSelection = RCC_ICCLKSOURCE_PLL1;
-  RCC_ClkInitStruct.IC1Selection.ClockDivider = 4;
+  RCC_ClkInitStruct.IC1Selection.ClockDivider = 2;
   RCC_ClkInitStruct.IC2Selection.ClockSelection = RCC_ICCLKSOURCE_PLL1;
-  RCC_ClkInitStruct.IC2Selection.ClockDivider = 6;
+  RCC_ClkInitStruct.IC2Selection.ClockDivider = 2;
   RCC_ClkInitStruct.IC6Selection.ClockSelection = RCC_ICCLKSOURCE_PLL1;
-  RCC_ClkInitStruct.IC6Selection.ClockDivider = 3;
+  RCC_ClkInitStruct.IC6Selection.ClockDivider = 1;
   RCC_ClkInitStruct.IC11Selection.ClockSelection = RCC_ICCLKSOURCE_PLL1;
-  RCC_ClkInitStruct.IC11Selection.ClockDivider = 3;
+  RCC_ClkInitStruct.IC11Selection.ClockDivider = 1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief BSEC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_BSEC_Init(void)
+{
+
+  /* USER CODE BEGIN BSEC_Init 0 */
+
+  // Enable the BSEC and SYSCFG peripherals
+  WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_BSECEN);
+  (void)READ_BIT(RCC->APB4ENR2, RCC_APB4ENR2_BSECEN);
+  WRITE_REG(RCC->APB4ENSR2, RCC_APB4ENR2_SYSCFGEN);
+  (void)READ_BIT(RCC->APB4ENR2, RCC_APB4ENR2_SYSCFGEN);
+
+  // Read the current voltage fuse data
+  MODIFY_REG(BSEC->OTPCR, (BSEC_OTPCR_PPLOCK | BSEC_OTPCR_PROG | BSEC_OTPCR_ADDR), HSLV_OTP);
+  while (READ_BIT(BSEC->OTPSR, BSEC_OTPSR_BUSY));
+  uint32_t fuse_data = BSEC->FVRw[HSLV_OTP];
+
+  // Blow all necessary fuses
+  const uint32_t expected_data = VDDIO2_HSLV_MASK | VDDIO3_HSLV_MASK;
+  if ((fuse_data & expected_data) != expected_data)
+  {
+    uint8_t success = 0;
+    fuse_data |= expected_data;
+    for (uint8_t i = 0; !success && (i < 10); ++i)
+    {
+      BSEC->WDR = fuse_data;
+      MODIFY_REG(BSEC->OTPCR, (BSEC_OTPCR_PPLOCK | BSEC_OTPCR_PROG | BSEC_OTPCR_ADDR), (HSLV_OTP | BSEC_OTPCR_PROG));
+      while (READ_BIT(BSEC->OTPSR, BSEC_OTPSR_BUSY));
+      if (!READ_BIT(BSEC->OTPSR, BSEC_OTPSR_PROGFAIL))
+      {
+        MODIFY_REG(BSEC->OTPCR, (BSEC_OTPCR_PPLOCK | BSEC_OTPCR_PROG | BSEC_OTPCR_ADDR), HSLV_OTP);
+        while (READ_BIT(BSEC->OTPSR, BSEC_OTPSR_BUSY));
+        success = (BSEC->FVRw[HSLV_OTP] == fuse_data);
+      }
+    }
+  }
+
+  /* USER CODE END BSEC_Init 0 */
+
+  /* USER CODE BEGIN BSEC_Init 1 */
+
+  /* USER CODE END BSEC_Init 1 */
+  /* USER CODE BEGIN BSEC_Init 2 */
+
+  /* USER CODE END BSEC_Init 2 */
+
 }
 
 /**
@@ -241,7 +309,7 @@ static void MX_XSPI2_Init(void)
   /* USER CODE END XSPI2_Init 1 */
   /* XSPI2 parameter configuration*/
   hxspi2.Instance = XSPI2;
-  hxspi2.Init.FifoThresholdByte = 1;
+  hxspi2.Init.FifoThresholdByte = 4;
   hxspi2.Init.MemoryMode = HAL_XSPI_SINGLE_MEM;
   hxspi2.Init.MemoryType = HAL_XSPI_MEMTYPE_MACRONIX;
   hxspi2.Init.MemorySize = HAL_XSPI_SIZE_256MB;
@@ -249,7 +317,7 @@ static void MX_XSPI2_Init(void)
   hxspi2.Init.FreeRunningClock = HAL_XSPI_FREERUNCLK_DISABLE;
   hxspi2.Init.ClockMode = HAL_XSPI_CLOCK_MODE_0;
   hxspi2.Init.WrapSize = HAL_XSPI_WRAP_NOT_SUPPORTED;
-  hxspi2.Init.ClockPrescaler = 0x03;
+  hxspi2.Init.ClockPrescaler = 0;
   hxspi2.Init.SampleShifting = HAL_XSPI_SAMPLE_SHIFT_NONE;
   hxspi2.Init.DelayHoldQuarterCycle = HAL_XSPI_DHQC_ENABLE;
   hxspi2.Init.ChipSelectBoundary = HAL_XSPI_BONDARYOF_NONE;

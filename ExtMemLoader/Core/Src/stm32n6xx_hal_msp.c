@@ -70,10 +70,11 @@ void HAL_MspInit(void)
   /* System interrupt init*/
 
   HAL_PWREx_EnableVddIO3();
-  HAL_PWREx_ConfigVddIORange(PWR_VDDIO3,PWR_VDDIO_RANGE_1V8);
+  HAL_PWREx_ConfigVddIORange(PWR_VDDIO3, PWR_VDDIO_RANGE_1V8);
 
-  HAL_PWREx_EnableVddIO4();
-  HAL_PWREx_ConfigVddIORange(PWR_VDDIO4,PWR_VDDIO_RANGE_3V3);
+  /** Enable the VREF clock
+  */
+  __HAL_RCC_VREFBUF_CLK_ENABLE();
 
   /* USER CODE BEGIN MspInit 1 */
 
