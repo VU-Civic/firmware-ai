@@ -29,6 +29,7 @@ int main(void)
       if (audio_data && ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0)))
       {
          storage_write_device_metadata_file(FIRMWARE_REVISION, audio_data);
+         comms_acknowledge_host();
          awaiting_data = 0;
       }
 
@@ -52,10 +53,6 @@ int main(void)
          // Always try to create a new SD card audio file (will only succeed if previous file was closed)
          storage_open_audio_file(audio_data, &ai_results, CLIP_LENGTH_SECONDS);
          storage_write_audio_file(audio_data->audio);
-
-         // Transmit a success message to the MCU so it knows we are alive
-         ai_results.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
-         comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
       }
 
       // Put the CPU to sleep if nothing left to process

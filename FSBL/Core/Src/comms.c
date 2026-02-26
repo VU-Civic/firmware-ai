@@ -262,8 +262,8 @@ static void to_host_i2c_init(void)
    WRITE_REG(RCC->AHB1ENSR, RCC_AHB1ENR_GPDMA1EN);
    (void)READ_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPDMA1EN);
 
-   // Set the initial de-asserted state for the AI-to-host wakeup pin
-   WRITE_REG(HOST_WAKEUP_GPIO_Port->BRR, HOST_WAKEUP_Pin);
+   // Set the initial de-asserted high state for the AI-to-host interrupt pin
+   WRITE_REG(HOST_WAKEUP_GPIO_Port->BSRR, HOST_WAKEUP_Pin);
 
    // Initialize the I2C GPIO pins
    uint32_t position = 32 - __builtin_clz(DATA_OUT_SCL_Pin) - 1;
@@ -279,10 +279,10 @@ static void to_host_i2c_init(void)
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF4_I2C3 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_OD & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(HOST_WAKEUP_Pin) - 1;
-   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_LOW << (position * 2U)));
-   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_OUTPUT_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_OD & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(HOST_WAKEUP_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
-   MODIFY_REG(HOST_WAKEUP_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_OUTPUT_PP & GPIO_MODE) << (position * 2U)));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_OD & GPIO_MODE) << (position * 2U)));
 
    // Disable the GPIO configuration clocks
    WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOAEN);
@@ -324,6 +324,12 @@ void comms_init(void)
    incoming_data = 0;
    to_host_i2c_init();
    from_host_spi_init();
+}
+
+void comms_acknowledge_host(void)
+{
+   // Assert the AI interrupt line low to wake up the host
+   WRITE_REG(HOST_WAKEUP_GPIO_Port->BRR, HOST_WAKEUP_Pin);
 }
 
 uint8_t comms_data_available(void)
