@@ -48,13 +48,14 @@
 									<listOptionValue builtIn="false" value="USE_FLAC_ENCODER"/>
 									<listOptionValue builtIn="false" value="STM32N647xx"/>
 									<listOptionValue builtIn="false" value="ARM_MATH_HELIUM"/>
+									<listOptionValue builtIn="false" value="SD_LOW_VOLTAGE_SIGNALING"/>
 									<listOptionValue builtIn="false" value="LL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6"/>
 									<listOptionValue builtIn="false" value="LL_ATON_RT_MODE=LL_ATON_RT_ASYNC"/>
 									<listOptionValue builtIn="false" value="LL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL"/>
 									<listOptionValue builtIn="false" value="LL_ATON_DBG_BUFFER_INFO_EXCLUDED=1"/>
 									<listOptionValue builtIn="false" value="LL_ATON_SW_FALLBACK"/>
-									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 									<listOptionValue builtIn="false" value="PERIPH_GET_TICK"/>
+									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1130725126" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
@@ -149,6 +150,7 @@
 							<builder buildPath="${workspace_loc:/CivicAlertAI_FSBL}/Release" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.builder.801709657" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Gnu Make Builder" parallelBuildOn="true" parallelizationNumber="optimal" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.builder"/>
 							<tool id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.1711137604" name="MCU/MPU GCC Assembler" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler">
 								<option id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel.1309460827" name="Debug level" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel" value="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel.value.g0" valueType="enumerated"/>
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="true" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.definedsymbols.1657001956" name="Define symbols (-D)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.definedsymbols" valueType="definedSymbols"/>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.619632373" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
 							<tool id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.670157916" name="MCU/MPU GCC Compiler" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler">
@@ -161,13 +163,14 @@
 									<listOptionValue builtIn="false" value="USE_FLAC_ENCODER"/>
 									<listOptionValue builtIn="false" value="STM32N647xx"/>
 									<listOptionValue builtIn="false" value="ARM_MATH_HELIUM"/>
+									<listOptionValue builtIn="false" value="SD_LOW_VOLTAGE_SIGNALING"/>
 									<listOptionValue builtIn="false" value="LL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6"/>
 									<listOptionValue builtIn="false" value="LL_ATON_RT_MODE=LL_ATON_RT_ASYNC"/>
 									<listOptionValue builtIn="false" value="LL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL"/>
 									<listOptionValue builtIn="false" value="LL_ATON_DBG_BUFFER_INFO_EXCLUDED=1"/>
 									<listOptionValue builtIn="false" value="LL_ATON_SW_FALLBACK"/>
-									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 									<listOptionValue builtIn="false" value="PERIPH_GET_TICK"/>
+									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1114391867" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
@@ -279,13 +282,14 @@
 									<listOptionValue builtIn="false" value="_FW_REVISION=abcdef12"/>
 									<listOptionValue builtIn="false" value="STM32N647xx"/>
 									<listOptionValue builtIn="false" value="ARM_MATH_HELIUM"/>
+									<listOptionValue builtIn="false" value="SD_LOW_VOLTAGE_SIGNALING"/>
 									<listOptionValue builtIn="false" value="LL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6"/>
 									<listOptionValue builtIn="false" value="LL_ATON_RT_MODE=LL_ATON_RT_ASYNC"/>
 									<listOptionValue builtIn="false" value="LL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL"/>
 									<listOptionValue builtIn="false" value="LL_ATON_DBG_BUFFER_INFO_EXCLUDED=1"/>
 									<listOptionValue builtIn="false" value="LL_ATON_SW_FALLBACK"/>
-									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 									<listOptionValue builtIn="false" value="PERIPH_GET_TICK"/>
+									<listOptionValue builtIn="false" value="BOARD_REV=C"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1665209150" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>

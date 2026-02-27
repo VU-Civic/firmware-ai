@@ -51,7 +51,7 @@ RM := rm -rf
 FLASH := STM32_Programmer_CLI
 SIGN := STM32_SigningTool_CLI
 
-DEFINES := -D_DATETIME=$(shell date +%s) -DBOARD_REV=$(BOARD_REV) -D_FW_REVISION=$(shell cd .. && git log --pretty=format:'%H' -n 1 | cut -c 1-8) -DSTM32N647xx -DPERIPH_GET_TICK -DARM_MATH_HELIUM -DLL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6 -DLL_ATON_RT_MODE=LL_ATON_RT_ASYNC -DLL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL -DLL_ATON_DBG_BUFFER_INFO_EXCLUDED=1 -DLL_ATON_SW_FALLBACK
+DEFINES := -D_DATETIME=$(shell date +%s) -DBOARD_REV=$(BOARD_REV) -D_FW_REVISION=$(shell cd .. && git log --pretty=format:'%H' -n 1 | cut -c 1-8) -DSTM32N647xx -DPERIPH_GET_TICK -DARM_MATH_HELIUM -DSD_LOW_VOLTAGE_SIGNALING -DLL_ATON_PLATFORM=LL_ATON_PLAT_STM32N6 -DLL_ATON_RT_MODE=LL_ATON_RT_ASYNC -DLL_ATON_OSAL=LL_ATON_OSAL_BARE_METAL -DLL_ATON_DBG_BUFFER_INFO_EXCLUDED=1 -DLL_ATON_SW_FALLBACK
 
 VPATH := Core/Src ../AiModel Middlewares/ST/AI/Npu/Devices/STM32N6XX Middlewares/ST/AI/Npu/ll_aton Middlewares/FatFS
 INCLUDES := -ICore/Inc -I../AiModel -I../Drivers/STM32N6xx_HAL_Driver/Inc -I../Drivers/STM32N6xx_HAL_Driver/Inc/Legacy -IDrivers/CMSIS/Device/ST/STM32N6xx/Include -IDrivers/CMSIS/Include -IDrivers/CMSIS_DSP/Include -IDrivers/CMSIS_DSP/Include/dsp -IDrivers/CMSIS_DSP/PrivateInclude -IMiddlewares/ST/AI/Inc -IMiddlewares/ST/AI/Npu/Devices/STM32N6XX -IMiddlewares/ST/AI/Npu/ll_aton -IMiddlewares/FatFS
