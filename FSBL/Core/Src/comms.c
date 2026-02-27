@@ -215,7 +215,6 @@ static void from_host_spi_init(void)
    *(&EXTI->SECCFGR1 + (0x08U * ((EXTI_LINE_15 & EXTI_REG_MASK) >> EXTI_REG_SHIFT))) |= (1UL << (EXTI_LINE_15 & EXTI_PIN_MASK));
 
    // Disable the GPIO configuration clocks
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOAEN);
    WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOBEN);
 
    // Enable secure access for the SPI DMA registers
@@ -280,12 +279,9 @@ static void to_host_i2c_init(void)
    MODIFY_REG(DATA_OUT_SDA_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_OD & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(HOST_WAKEUP_Pin) - 1;
    MODIFY_REG(HOST_WAKEUP_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
-   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_OD & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_OUTPUT_OD & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
    MODIFY_REG(HOST_WAKEUP_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
-   MODIFY_REG(HOST_WAKEUP_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_OD & GPIO_MODE) << (position * 2U)));
-
-   // Disable the GPIO configuration clocks
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOAEN);
+   MODIFY_REG(HOST_WAKEUP_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_OUTPUT_OD & GPIO_MODE) << (position * 2U)));
 
    // Enable secure access for the I2C DMA registers
    const uint32_t channel_idx = 1UL << 1;
