@@ -96,12 +96,6 @@ static void disable_sd_card(void)
    CLEAR_BIT(SDMMC1->POWER, SDMMC_POWER_PWRCTRL);
    WRITE_REG(SD_CARD_EN_GPIO_Port->BRR, SD_CARD_EN_Pin);
    WRITE_REG(SD_PWR_SELECT_GPIO_Port->BRR, SD_PWR_SELECT_Pin);
-
-   // Disable all GPIO and SDMMC clocks
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOCEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOEEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOHEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIONEN);
    WRITE_REG(RCC->AHB5ENCR, RCC_AHB5ENR_SDMMC1EN);
 
    // Clear the SD card initialization flag
@@ -384,12 +378,6 @@ static uint8_t enable_sd_card(void)
       disable_sd_card();
       return 0;
    }
-
-   // Disable GPIO configuration clocks
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOCEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOEEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOHEN);
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIONEN);
 
    // Verify that SD card is ready to use
    for (uint32_t i = 0; SDMMC_CmdSendStatus(SDMMC1, sd_card_details.address) || (((SDMMC_GetResponse(SDMMC1, SDMMC_RESP1) >> 9U) & 0x0FU) != HAL_SD_CARD_TRANSFER); ++i)

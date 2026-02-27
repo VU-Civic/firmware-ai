@@ -214,9 +214,6 @@ static void from_host_spi_init(void)
    CLEAR_BIT(EXTI->FTSR1, iocurrent);
    *(&EXTI->SECCFGR1 + (0x08U * ((EXTI_LINE_15 & EXTI_REG_MASK) >> EXTI_REG_SHIFT))) |= (1UL << (EXTI_LINE_15 & EXTI_PIN_MASK));
 
-   // Disable the GPIO configuration clocks
-   WRITE_REG(RCC->AHB4ENCR, RCC_AHB4ENR_GPIOBEN);
-
    // Enable secure access for the SPI DMA registers
    const uint32_t channel_idx = 1UL << 0;
    SET_BIT(GPDMA1->PRIVCFGR, channel_idx);
