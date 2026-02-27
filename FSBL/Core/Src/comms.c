@@ -182,7 +182,7 @@ static void from_host_spi_init(void)
    uint32_t position = 32 - __builtin_clz(DATA_IN_CS_Pin) - 1;
    MODIFY_REG(DATA_IN_CS_GPIO_Port->OSPEEDR, (GPIO_OSPEEDR_OSPEED0 << (position * 2U)), (GPIO_SPEED_FREQ_MEDIUM << (position * 2U)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->OTYPER, (GPIO_OTYPER_OT0 << position), (((GPIO_MODE_AF_PP & OUTPUT_TYPE) >> OUTPUT_TYPE_Pos) << position));
-   MODIFY_REG(DATA_IN_CS_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_NOPULL << (position * 2U)));
+   MODIFY_REG(DATA_IN_CS_GPIO_Port->PUPDR, (GPIO_PUPDR_PUPD0 << (position * 2U)), (GPIO_PULLUP << (position * 2U)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->AFR[position >> 3U], (0xFU << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)), (GPIO_AF5_SPI1 << ((position & 0x07U) * GPIO_AFRL_AFSEL1_Pos)));
    MODIFY_REG(DATA_IN_CS_GPIO_Port->MODER, (GPIO_MODER_MODE0 << (position * 2U)), ((GPIO_MODE_AF_PP & GPIO_MODE) << (position * 2U)));
    position = 32 - __builtin_clz(DATA_IN_SCK_Pin) - 1;
