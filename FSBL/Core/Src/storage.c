@@ -47,6 +47,7 @@ static volatile uint32_t sd_xfer_context, sd_result_ready, sd_timed_out;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
 static sd_card_details_t sd_card_details;
+static uint8_t work_buf[FF_MAX_SS];
 static double previous_timestamp;
 
 #ifdef USE_FLAC_ENCODER
@@ -1046,7 +1047,10 @@ void storage_init(void)
    {
       // Mount the SD card file system
       char sd_card_path[4] = { 0 };
-      f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+      const MKFS_PARM opts = { .fmt = FM_EXFAT, .n_fat = 0, .align = 0, .n_root = 0, .au_size = 4096 };
+      const FRESULT res = f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+      if (((res == FR_NO_FILESYSTEM) && (f_mkfs((TCHAR const*)sd_card_path, &opts, work_buf, sizeof(work_buf)) != FR_OK)) || (res != FR_OK))
+         disable_sd_card();
    }
    else
       disable_sd_card();
@@ -1062,7 +1066,10 @@ void storage_handle_sd_card_state_change(void)
       {
          // Mount the SD card file system
          char sd_card_path[4] = { 0 };
-         f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+         const MKFS_PARM opts = { .fmt = FM_EXFAT, .n_fat = 0, .align = 0, .n_root = 0, .au_size = 4096 };
+         const FRESULT res = f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+         if (((res == FR_NO_FILESYSTEM) && (f_mkfs((TCHAR const*)sd_card_path, &opts, work_buf, sizeof(work_buf)) != FR_OK)) || (res != FR_OK))
+            disable_sd_card();
       }
       else
          disable_sd_card();

@@ -5966,7 +5966,7 @@ static FRESULT create_partition (
 
 		/* Create primary GPT header */
 		memset(buf, 0, ss);
-		arm_copy_q7("EFI PART" "\0\0\1\0" "\x5C\0\0", (q7_t*)(buf + GPTH_Sign), 16);	/* Signature, version (1.0) and size (92) */
+		arm_copy_q7((q7_t*)("EFI PART" "\0\0\1\0" "\x5C\0\0"), (q7_t*)(buf + GPTH_Sign), 16);	/* Signature, version (1.0) and size (92) */
 		st_32(buf + GPTH_PtBcc, ~bcc);			/* Table check sum */
 		st_64(buf + GPTH_CurLba, 1);			/* LBA of this header */
 		st_64(buf + GPTH_BakLba, sz_drv - 1);	/* LBA of secondary header */
@@ -6305,7 +6305,7 @@ FRESULT f_mkfs (
 		for (n = 0; n < 2; n++) {
 			/* Main record (+0) */
 			memset(buf, 0, ss);
-			arm_copy_q7("\xEB\x76\x90" "EXFAT   ", (q7_t*)(buf + BS_JmpBoot), 11);	/* Boot jump code (x86), OEM name */
+			arm_copy_q7((q7_t*)("\xEB\x76\x90" "EXFAT   "), (q7_t*)(buf + BS_JmpBoot), 11);	/* Boot jump code (x86), OEM name */
 			st_64(buf + BPB_VolOfsEx, b_vol);						/* Volume offset in the physical drive [sector] */
 			st_64(buf + BPB_TotSecEx, sz_vol);						/* Volume size [sector] */
 			st_32(buf + BPB_FatOfsEx, (DWORD)(b_fat - b_vol));		/* FAT offset [sector] */
@@ -6426,7 +6426,7 @@ FRESULT f_mkfs (
 #endif
 		/* Create FAT VBR */
 		memset(buf, 0, ss);
-		arm_copy_q7("\xEB\xFE\x90" "MSDOS5.0", (q7_t*)(buf + BS_JmpBoot), 11);	/* Boot jump code (x86), OEM name */
+		arm_copy_q7((q7_t*)("\xEB\xFE\x90" "MSDOS5.0"), (q7_t*)(buf + BS_JmpBoot), 11);	/* Boot jump code (x86), OEM name */
 		st_16(buf + BPB_BytsPerSec, ss);				/* Sector size [byte] */
 		buf[BPB_SecPerClus] = (BYTE)pau;				/* Cluster size [sector] */
 		st_16(buf + BPB_RsvdSecCnt, (WORD)sz_rsv);		/* Size of reserved area */
@@ -6449,13 +6449,13 @@ FRESULT f_mkfs (
 			st_16(buf + BPB_BkBootSec32, 6);			/* Offset of backup VBR (VBR + 6) */
 			buf[BS_DrvNum32] = 0x80;					/* Drive number (for int13) */
 			buf[BS_BootSig32] = 0x29;					/* Extended boot signature */
-			arm_copy_q7("NO NAME    " "FAT32   ", (q7_t*)(buf + BS_VolLab32), 19);	/* Volume label, FAT signature */
+			arm_copy_q7((q7_t*)("NO NAME    " "FAT32   "), (q7_t*)(buf + BS_VolLab32), 19);	/* Volume label, FAT signature */
 		} else {
 			st_32(buf + BS_VolID, vsn);					/* VSN */
 			st_16(buf + BPB_FATSz16, (WORD)sz_fat);		/* FAT size [sector] */
 			buf[BS_DrvNum] = 0x80;						/* Drive number (for int13) */
 			buf[BS_BootSig] = 0x29;						/* Extended boot signature */
-			arm_copy_q7("NO NAME    " "FAT     ", (q7_t*)(buf + BS_VolLab), 19);	/* Volume label, FAT signature */
+			arm_copy_q7((q7_t*)("NO NAME    " "FAT     "), (q7_t*)(buf + BS_VolLab), 19);	/* Volume label, FAT signature */
 		}
 		st_16(buf + BS_55AA, 0xAA55);					/* Signature (offset is fixed here regardless of sector size) */
 		if (disk_write(pdrv, buf, b_vol, 1) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);	/* Write it to the VBR sector */
