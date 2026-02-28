@@ -588,6 +588,11 @@ void system_init(void)
    // Disable CPU deep-sleep mode
    CLEAR_BIT(SCB->SCR, SCB_SCR_SLEEPDEEP_Msk);
 
+   // Enable the DWT cycle counter to use for timeouts
+   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
+   WRITE_REG(DWT->CYCCNT, 0);
+   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
+
    // Deactivate the SYSCFG clock
    (void)READ_REG(SYSCFG->INITSVTORCR);
    WRITE_REG(RCC->APB4ENCR2, RCC_APB4ENCR2_SYSCFGENC);
@@ -603,11 +608,6 @@ void system_finalize(void)
 {
    // Disable SysTick interrupts
    CLEAR_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
-
-   // Enable the DWT cycle counter to use for timeouts
-   SET_BIT(CoreDebug->DEMCR, CoreDebug_DEMCR_TRCENA_Msk);
-   WRITE_REG(DWT->CYCCNT, 0);
-   SET_BIT(DWT->CTRL, DWT_CTRL_CYCCNTENA_Msk);
 
    // Enable an independent watchdog that resets if not fed within 16 seconds
    SET_BIT(DBGMCU->APB4FZ1, DBGMCU_APB4FZ1_DBG_IWDG_STOP);
