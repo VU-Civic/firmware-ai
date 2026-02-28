@@ -43,11 +43,11 @@ typedef struct
 
 static volatile uint8_t audio_file_open;
 static volatile DSTATUS sd_card_status;
-static volatile uint32_t sd_xfer_context, sd_result_ready, sd_timed_out;
+static volatile uint32_t sd_xfer_context, sd_result_ready;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
+static uint8_t work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
-static uint8_t work_buf[FF_MAX_SS];
 static double previous_timestamp;
 
 #ifdef USE_FLAC_ENCODER
@@ -417,11 +417,8 @@ static void sd_card_write_audio_metadata(volatile audio_packet_t *audio_data, co
    f_write(&audio_file, line_buffer, num_chars, &data_written);
    num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q3: %ld\n", (int32_t)audio_data->q3);
    f_write(&audio_file, line_buffer, num_chars, &data_written);
-   for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-   {
-      sd_timed_out = 0;
+   for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
       audio_file_open = (f_close(&audio_file) != FR_OK);
-   }
 }
 
 #ifdef USE_FLAC_ENCODER
@@ -473,11 +470,8 @@ static void sd_card_close_audio_file(void)
       f_write(&audio_file, output_buffer, bytes_written, &data_written);
 
       // Close the audio file
-      for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-      {
-         sd_timed_out = 0;
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
-      }
    }
 }
 
@@ -530,11 +524,8 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
    if (audio_file_open)
    {
       sd_card_write_audio_metadata(audio_data, ai_results);
-      for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-      {
-         sd_timed_out = 0;
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
-      }
    }
 
    // Open the requested audio file
@@ -600,11 +591,8 @@ static void sd_card_close_audio_file(void)
       f_lseek(&audio_file, 40);
       field = samples_written * sizeof(int16_t) * AUDIO_PACKET_NUM_CHANNELS;
       f_write(&audio_file, &field, 4, &data_written);
-      for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-      {
-         sd_timed_out = 0;
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
-      }
    }
 }
 
@@ -650,11 +638,8 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
    if (audio_file_open)
    {
       sd_card_write_audio_metadata(audio_data, ai_results);
-      for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-      {
-         sd_timed_out = 0;
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
-      }
    }
 
    // Open the requested audio file
@@ -722,16 +707,6 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 #endif  // #ifdef USE_FLAC_ENCODER
 
 
-// Context-Switching Functions -----------------------------------------------------------------------------------------
-
-static void switch_context(void)
-{
-   // Ensure that we time out before the next data packet arrives
-   if (comms_cycles_since_data_received() >= timeout_num_cycles)
-      sd_timed_out = 1;
-}
-
-
 // FatFS Required Driver Functions -------------------------------------------------------------------------------------
 
 DSTATUS disk_initialize(BYTE)
@@ -769,7 +744,7 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
 
    // Try to read up to two times to account for potential CRC errors
    sd_rx_cplt = 0;
-   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_timed_out && !sd_rx_cplt && (attempt < 2); ++attempt)
+   for (uint32_t attempt = 0, sd_timed_out = 0; !sd_card_state_changed && !sd_timed_out && !sd_rx_cplt && (attempt < 2); ++attempt)
    {
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
@@ -789,9 +764,9 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
       WRITE_REG(SDMMC1->ARG, sector);
       MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (sd_xfer_context | SDMMC_CMD_CMDTRANS | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
 
-      // Context switch until a response is received or the SD card changes state
+      // Wait until a response is received or the SD card changes state
       while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
-         switch_context();
+         sd_timed_out = (comms_cycles_since_data_received() >= (extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles));
       sd_result_ready = 0;
    }
    return !sd_rx_cplt;
@@ -809,7 +784,7 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
 
    // Try to write up to two times to account for potential CRC errors
    sd_tx_cplt = 0;
-   for (uint32_t attempt = 0; !sd_card_state_changed && !sd_timed_out && !sd_tx_cplt && (attempt < 2); ++attempt)
+   for (uint32_t attempt = 0, sd_timed_out = 0; !sd_card_state_changed && !sd_timed_out && !sd_tx_cplt && (attempt < 2); ++attempt)
    {
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
@@ -829,9 +804,9 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
       WRITE_REG(SDMMC1->ARG, sector);
       MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (sd_xfer_context | SDMMC_CMD_CMDTRANS | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
 
-      // Context switch until a response is received or the SD card changes state
+      // Wait until a response is received or the SD card changes state
       while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
-         switch_context();
+         sd_timed_out = (comms_cycles_since_data_received() >= (extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles));
       sd_result_ready = 0;
    }
    return !sd_tx_cplt;
@@ -941,6 +916,7 @@ void sd_card_detection_isr(uint8_t sd_card_detected)
 void storage_init(void)
 {
    // Initialize all static variables
+   extended_timeout = 1;
    sd_card_status = STA_NOINIT;
    previous_timestamp = 6400.0;
    output_buffer_len = samples_written = audio_file_open = 0;
@@ -1042,6 +1018,7 @@ void storage_init(void)
    }
    else
       disable_sd_card();
+   extended_timeout = 0;
 }
 
 void storage_handle_sd_card_state_change(void)
@@ -1050,6 +1027,7 @@ void storage_handle_sd_card_state_change(void)
    if (sd_card_state_changed)
    {
       // Attempt to initialize or disable the SD card based on its detection status
+      extended_timeout = 1;
       if ((sd_card_state_changed - 1) && enable_sd_card())
       {
          // Mount the SD card file system
@@ -1061,6 +1039,7 @@ void storage_handle_sd_card_state_change(void)
       }
       else
          disable_sd_card();
+      extended_timeout = 0;
    }
 }
 
@@ -1074,14 +1053,12 @@ void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_
       previous_timestamp = audio_timestamp;
 
    // Open a new file on the SD card
-   sd_timed_out = 0;
    sd_card_open_file((uint32_t)previous_timestamp, audio_data, ai_results, clip_length_seconds);
 }
 
 void storage_write_audio_file(volatile int16_t *audio_data)
 {
    // Update the historical PCM data and write the audio to a currently open file
-   sd_timed_out = 0;
    //TODO: arm_copy_q15(&pcm_history[AUDIO_PACKET_NUM_SAMPLES], &pcm_history[0], AUDIO_CLIP_HISTORY_NUM_SAMPLES - AUDIO_PACKET_NUM_SAMPLES);
    //arm_copy_q15((int16_t*)audio_data, &pcm_history[AUDIO_CLIP_HISTORY_NUM_SAMPLES - AUDIO_PACKET_NUM_SAMPLES], AUDIO_PACKET_NUM_SAMPLES);
    sd_card_write_audio_file((int16_t*)audio_data);
@@ -1105,11 +1082,8 @@ void storage_write_device_metadata_file(const char *fw_revision, volatile audio_
       f_write(&audio_file, line_buffer, num_chars, &data_written);
       num_chars = snprintf(line_buffer, sizeof(line_buffer), "IMSI: %s\n", (char*)audio_data->imsi);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
-      for (uint32_t retries = 0; audio_file_open && (retries < 1000); ++retries)
-      {
-         sd_timed_out = 0;
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
-      }
    }
 }
 
