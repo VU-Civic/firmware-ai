@@ -46,6 +46,7 @@ static volatile DSTATUS sd_card_status;
 static volatile uint32_t sd_xfer_context, sd_result_ready;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
+static char time_string[10], audio_directory[14], file_name[32];
 static uint8_t work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
 static double previous_timestamp;
@@ -75,8 +76,9 @@ static uint8_t flac_encoder_mem[81936];
 __attribute__ ((section(".noncacheable")))
 static int16_t pcm[FLAC_ENCODER_BLOCK_SIZE];
 
-//__attribute__ ((section(".nonessential")))
-//static int16_t pcm_history[AUDIO_CLIP_HISTORY_NUM_SAMPLES];
+__attribute__ ((section(".nonessential")))
+static int16_t pcm_history[AUDIO_CLIP_HISTORY_NUM_SAMPLES];
+static uint32_t pcm_history_index;
 
 #endif  // #ifdef USE_FLAC_ENCODER
 
@@ -393,30 +395,68 @@ static uint8_t enable_sd_card(void)
    return 1;
 }
 
-static void sd_card_write_audio_metadata(volatile audio_packet_t *audio_data, const ai_data_t *ai_results)
+static void sd_card_update_directories(uint32_t audio_timestamp)
 {
-   UINT data_written;
-   static char line_buffer[32];
-   uint32_t whole = (uint32_t)audio_data->timestamp, fraction = (uint32_t)((audio_data->timestamp - whole) * 1000);
-   int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %lu.%03lu\n", whole, fraction);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Probability: %u%%\n", (unsigned int)ai_results->class_probabilities[0]);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   int32_t whole_int = (int32_t)audio_data->lat; fraction = (uint32_t)(fabsf(audio_data->lat - whole_int) * 1000000000);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lat: %ld.%09lu\n", whole_int, fraction);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   whole_int = (int32_t)audio_data->lon; fraction = (uint32_t)(fabsf(audio_data->lon - whole_int) * 1000000000);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lon: %ld.%09lu\n", whole_int, fraction);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   whole_int = (int32_t)audio_data->ht; fraction = (uint32_t)(fabsf(audio_data->ht - whole_int) * 1000);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Ht: %ld.%03lu\n", whole_int, fraction);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q1: %ld\n", (int32_t)audio_data->q1);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q2: %ld\n", (int32_t)audio_data->q2);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
-   num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q3: %ld\n", (int32_t)audio_data->q3);
-   f_write(&audio_file, line_buffer, num_chars, &data_written);
+   // Check whether time to create a new storage directory
+   static uint32_t audio_directory_timestamp;
+   const time_t timestamp = (time_t)audio_timestamp;
+   struct tm *curr_time = gmtime(&timestamp);
+   strftime(time_string, sizeof(time_string), "%H%M%S", curr_time);
+   if ((audio_timestamp - audio_directory_timestamp) >= 3600)
+   {
+      // Generate a new directory name from the current date and time
+      uint8_t success = 1;
+      static FILINFO file_info;
+      curr_time->tm_min = curr_time->tm_sec = 0;
+      memset(audio_directory, 0, sizeof(audio_directory));
+      strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
+      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
+         success = (f_mkdir(audio_directory) == FR_OK);
+      strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
+      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
+         success = (f_mkdir(audio_directory) == FR_OK);
+      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
+      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
+         success = (f_mkdir(audio_directory) == FR_OK);
+      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
+      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
+         success = (f_mkdir(audio_directory) == FR_OK);
+      if (success)
+         audio_directory_timestamp = (uint32_t)mktime(curr_time);
+   }
+}
+
+static void sd_card_store_audio_metadata(volatile audio_packet_t *audio_data, const ai_data_t *ai_results)
+{
+   snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
+   audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
+   if (audio_file_open)
+   {
+      UINT data_written;
+      static char line_buffer[32];
+      uint32_t whole = (uint32_t)audio_data->timestamp, fraction = (uint32_t)((audio_data->timestamp - whole) * 1000);
+      int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %lu.%03lu\n", whole, fraction);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Probability: %u%%\n", (unsigned int)ai_results->class_probabilities[0]);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      int32_t whole_int = (int32_t)audio_data->lat; fraction = (uint32_t)(fabsf(audio_data->lat - whole_int) * 1000000000);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lat: %ld.%09lu\n", whole_int, fraction);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      whole_int = (int32_t)audio_data->lon; fraction = (uint32_t)(fabsf(audio_data->lon - whole_int) * 1000000000);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lon: %ld.%09lu\n", whole_int, fraction);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      whole_int = (int32_t)audio_data->ht; fraction = (uint32_t)(fabsf(audio_data->ht - whole_int) * 1000);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Ht: %ld.%03lu\n", whole_int, fraction);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q1: %ld\n", (int32_t)audio_data->q1);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q2: %ld\n", (int32_t)audio_data->q2);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Q3: %ld\n", (int32_t)audio_data->q3);
+      f_write(&audio_file, line_buffer, num_chars, &data_written);
+      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
+         audio_file_open = (f_close(&audio_file) != FR_OK);
+   }
    for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
       audio_file_open = (f_close(&audio_file) != FR_OK);
 }
@@ -489,44 +529,10 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
    }
 
    // Determine if time to create a new storage directory
-   const time_t timestamp = (time_t)audio_timestamp;
-   struct tm *curr_time = gmtime(&timestamp);
-   static uint32_t audio_directory_timestamp;
-   static char time_string[10], audio_directory[14];
-   strftime(time_string, sizeof(time_string), "%H%M%S", curr_time);
-   if ((audio_timestamp - audio_directory_timestamp) >= 3600)
-   {
-      // Generate a new directory name from the current date and time
-      uint8_t success = 1;
-      static FILINFO file_info;
-      curr_time->tm_min = curr_time->tm_sec = 0;
-      memset(audio_directory, 0, sizeof(audio_directory));
-      strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      if (success)
-         audio_directory_timestamp = (uint32_t)mktime(curr_time);
-   }
+   sd_card_update_directories(audio_timestamp);
 
-   // Create a file to contain the corresponding audio metadata
-   static char file_name[32];
-   snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
-   audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
-   if (audio_file_open)
-   {
-      sd_card_write_audio_metadata(audio_data, ai_results);
-      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
-         audio_file_open = (f_close(&audio_file) != FR_OK);
-   }
+   // Store the corresponding audio metadata
+   sd_card_store_audio_metadata(audio_data, ai_results);
 
    // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
@@ -603,44 +609,10 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
       return;
 
    // Determine if time to create a new storage directory
-   const time_t timestamp = (time_t)audio_timestamp;
-   struct tm *curr_time = gmtime(&timestamp);
-   static uint32_t audio_directory_timestamp;
-   static char time_string[10], audio_directory[14];
-   strftime(time_string, sizeof(time_string), "%H%M%S", curr_time);
-   if ((audio_timestamp - audio_directory_timestamp) >= 3600)
-   {
-      // Generate a new directory name from the current date and time
-      uint8_t success = 1;
-      static FILINFO file_info;
-      curr_time->tm_min = curr_time->tm_sec = 0;
-      memset(audio_directory, 0, sizeof(audio_directory));
-      strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
-      if (success)
-         audio_directory_timestamp = (uint32_t)mktime(curr_time);
-   }
+   sd_card_update_directories(audio_timestamp);
 
-   // Create a file to contain the corresponding audio metadata
-   static char file_name[32];
-   snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
-   audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
-   if (audio_file_open)
-   {
-      sd_card_write_audio_metadata(audio_data, ai_results);
-      for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
-         audio_file_open = (f_close(&audio_file) != FR_OK);
-   }
+   // Store the corresponding audio metadata
+   sd_card_store_audio_metadata(audio_data, ai_results);
 
    // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.wav", audio_directory, time_string);
@@ -997,6 +969,7 @@ void storage_init(void)
    flac_encoder.enable_md5 = 0;
    if (!tflac_validate(&flac_encoder, flac_encoder_mem, tflac_size_memory(FLAC_ENCODER_BLOCK_SIZE)))
       output_buffer_len = tflac_size_frame(FLAC_ENCODER_BLOCK_SIZE, AUDIO_NUM_ENCODED_CHANNELS, AUDIO_BITS_PER_SAMPLE);
+   pcm_history_index = 0;
 
 #endif  // #ifdef USE_FLAC_ENCODER
 
@@ -1054,13 +1027,23 @@ void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_
 
    // Open a new file on the SD card
    sd_card_open_file((uint32_t)previous_timestamp, audio_data, ai_results, clip_length_seconds);
+
+   // Write the stored historical audio to the file
+#ifdef USE_FLAC_ENCODER
+   for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
+      sd_card_write_audio_file(&pcm_history[i]);
+   for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
+      sd_card_write_audio_file(&pcm_history[i]);
+#endif
 }
 
 void storage_write_audio_file(volatile int16_t *audio_data)
 {
    // Update the historical PCM data and write the audio to a currently open file
-   //TODO: arm_copy_q15(&pcm_history[AUDIO_PACKET_NUM_SAMPLES], &pcm_history[0], AUDIO_CLIP_HISTORY_NUM_SAMPLES - AUDIO_PACKET_NUM_SAMPLES);
-   //arm_copy_q15((int16_t*)audio_data, &pcm_history[AUDIO_CLIP_HISTORY_NUM_SAMPLES - AUDIO_PACKET_NUM_SAMPLES], AUDIO_PACKET_NUM_SAMPLES);
+#ifdef USE_FLAC_ENCODER
+   arm_copy_q15((int16_t*)audio_data, &pcm_history[pcm_history_index], AUDIO_PACKET_NUM_SAMPLES);
+   pcm_history_index = (pcm_history_index + AUDIO_PACKET_NUM_SAMPLES) % AUDIO_CLIP_HISTORY_NUM_SAMPLES;
+#endif
    sd_card_write_audio_file((int16_t*)audio_data);
 }
 
