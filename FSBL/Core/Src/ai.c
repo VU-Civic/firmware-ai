@@ -275,11 +275,11 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
       const uint32_t copy_size = audio_idx ? AI_FFT_STEP_SIZE : (AI_FFT_WINDOW_SIZE + (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE) - AUDIO_PACKET_NUM_SAMPLES);
       arm_copy_q15((int16_t*)&packet->audio[audio_idx], &pending_audio_data[copy_offset], copy_size);
       compute_feature_column(pending_audio_data, &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS]);
-      arm_copy_q15(&pending_audio_data[AI_FFT_STEP_SIZE], &pending_audio_data[0], AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE);
+      memmove(&pending_audio_data[0], &pending_audio_data[AI_FFT_STEP_SIZE], sizeof(int16_t) * (AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE));
    }
 
    // Shift previous spectrogram windows to make room for the next batch
-   arm_copy_f32(&spectrogram_buffer[AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS], &spectrogram_buffer[0], (AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS);
+   memmove(&spectrogram_buffer[0], &spectrogram_buffer[AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS], sizeof(float) * ((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS));
 
    // Compute new AI features from the incoming data
    for (uint32_t audio_idx = 0, time_step = 0; time_step < AI_AVAILABLE_WINDOWS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
@@ -287,8 +287,9 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
 
    // Copy final spectrogram window into missing slots so there are no discontinuities in the last few ms of AI network input
    for (uint32_t time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; ++time_step)
-      arm_copy_f32(&spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + AI_AVAILABLE_WINDOWS_PER_PACKET - 1) * AI_SPECTROGRAM_NUM_MELS],
-                   &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS], AI_SPECTROGRAM_NUM_MELS);
+      memmove(&spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS],
+              &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + AI_AVAILABLE_WINDOWS_PER_PACKET - 1) * AI_SPECTROGRAM_NUM_MELS],
+              sizeof(float) * AI_SPECTROGRAM_NUM_MELS);
 
    // Store any pending audio data for the next packet
    arm_copy_q15((int16_t*)&packet->audio[AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE], pending_audio_data, AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
