@@ -12,8 +12,8 @@ int main(void)
    system_init();
    flash_init();
    storage_init();
-   comms_init();
    ai_init();
+   comms_init();
 
    // Finalize the system configuration
    ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
@@ -39,6 +39,7 @@ int main(void)
       if (audio_data)
       {
          __enable_irq();
+         comms_acknowledge_host();
          ai_results.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
          system_feed_watchdog();
