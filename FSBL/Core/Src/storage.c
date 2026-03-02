@@ -660,6 +660,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
    {
       // Interleave the audio samples
       UINT data_written = 0;
+#if AUDIO_PACKET_NUM_CHANNELS == 4
       for (uint32_t sample_index = 0; sample_index < AUDIO_PACKET_NUM_SAMPLES; sample_index += 8)
       {
          int16x8x4_t channels;
@@ -669,6 +670,9 @@ static void sd_card_write_audio_file(int16_t *audio_data)
          channels.val[3] = vld1q_s16(&audio_data[(3*AUDIO_PACKET_NUM_SAMPLES)+sample_index]);
          vst4q_s16(&pcm[sample_index*AUDIO_PACKET_NUM_CHANNELS], channels);
       }
+#else
+      arm_copy_q15(audio_data, pcm, AUDIO_PACKET_NUM_SAMPLES);
+#endif
       SCB_CleanDCache_by_Addr(pcm, sizeof(pcm));
       if ((f_write(&audio_file, pcm, sizeof(pcm), &data_written) == FR_OK) && (data_written == sizeof(pcm)))
          system_feed_watchdog();
