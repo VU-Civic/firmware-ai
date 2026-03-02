@@ -968,7 +968,7 @@ void storage_init(void)
    (void)READ_BIT(RCC->MEMENR, RCC_MEMENR_FLEXRAMEN);
    CLEAR_BIT(RAMCFG_FLEXRAM->CR, RAMCFG_AXISRAM_POWERDOWN);
 
-   // Enable secure access for the FLEXMEM
+   // Enable secure access for the FLEXRAM
    system_set_risaf_default(RISAF7);
 
    // Initialize the FLAC encoder
