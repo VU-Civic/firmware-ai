@@ -336,18 +336,8 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
 
    // Process the classification output
-   min_value = 0.0f;
-   max_value = (data_out[0] > data_out[1]) ? data_out[0] : data_out[1];
    for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
-   {
-      data_out[i] = expf(data_out[i] - max_value);
-      min_value += data_out[i];
-   }
-   for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
-   {
-      const float out_float = 100.0f * data_out[i] / min_value;
-      output[i] = (uint8_t)((out_float > 100.0f) ? 100.0f : ((out_float < 0.0f) ? 0.0f : out_float));
-   }
+      output[i] = (uint8_t)(100.0f * (1.0f - data_out[i]));
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));

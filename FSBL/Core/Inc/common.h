@@ -33,7 +33,7 @@
 #define AUDIO_PACKET_END_DELIMITER                    { 0xFE, 0xF0, 0xF2, 0x25 }
 
 #define AI_FIRMWARE_VERSION_LENGTH                    8
-#define AI_NUM_CLASSES                                2
+#define AI_NUM_CLASSES                                1
 #define AI_GUNSHOT_CLASS_INDEX                        0
 
 #define CELL_IMEI_LENGTH                              15
