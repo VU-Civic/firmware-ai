@@ -518,17 +518,13 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
+static uint8_t sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
-   // Do not continue if the SD card is not initialized
-   if (!sd_card_initialized)
-      return;
-
    // Extend the length of an existing audio file if already open
-   if (audio_file_open)
+   if (!sd_card_initialized || audio_file_open)
    {
       samples_written = 0;
-      return;
+      return 0;
    }
 
    // Determine if time to create a new storage directory
@@ -556,6 +552,7 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
       tflac_encode_streaminfo(&flac_encoder, 1, output_buffer, output_buffer_len, &bytes_written);
       sd_card_write_bytes(output_buffer, bytes_written);
    }
+   return 1;
 }
 
 static void sd_card_write_audio_file(int16_t *audio_data)
@@ -606,11 +603,11 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
+static uint8_t sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Do not continue if the SD card is not initialized or an audio file is already open
    if (!sd_card_initialized || audio_file_open)
-      return;
+      return 0;
 
    // Determine if time to create a new storage directory
    sd_card_update_directories(audio_timestamp);
@@ -650,6 +647,7 @@ static void sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t 
       min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
       samples_written = 0;
    }
+   return 1;
 }
 
 static void sd_card_write_audio_file(int16_t *audio_data)
@@ -1031,15 +1029,16 @@ void storage_handle_sd_card_state_change(void)
 void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Open a new file on the SD card
-   sd_card_open_file((uint32_t)current_timestamp, audio_data, ai_results, clip_length_seconds);
-
-   // Write the stored historical audio to the file
+   if (sd_card_open_file((uint32_t)current_timestamp, audio_data, ai_results, clip_length_seconds))
+   {
+      // Write stored historical audio to the file
 #ifdef USE_FLAC_ENCODER
-   for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
-      sd_card_write_audio_file(&pcm_history[i]);
-   for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
-      sd_card_write_audio_file(&pcm_history[i]);
+      for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
+         sd_card_write_audio_file(&pcm_history[i]);
+      for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
+         sd_card_write_audio_file(&pcm_history[i]);
 #endif
+   }
 }
 
 void storage_write_audio_file(volatile audio_packet_t *audio_data)
