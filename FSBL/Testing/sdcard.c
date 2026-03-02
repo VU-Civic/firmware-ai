@@ -50,7 +50,7 @@ int main(void)
       {
          // Always try to create a new SD card audio file (will only succeed if previous file was closed)
          storage_open_audio_file(audio_data, &ai_results, audio_data->ai_config.audio_clip_length_seconds);
-         storage_write_audio_file(audio_data->audio);
+         storage_write_audio_file(audio_data);
       }
 
       // Put the CPU to sleep if nothing left to process
