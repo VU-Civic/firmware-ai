@@ -5,6 +5,10 @@
 #include <sys/stat.h>
 #include <sys/times.h>
 #include "stm32n6xx.h"
+#include "ai.h"
+#include "comms.h"
+#include "flash.h"
+#include "storage.h"
 #include "system.h"
 
 
@@ -63,17 +67,17 @@ void *_sbrk(ptrdiff_t incr)
 
 // ARM Cortex Processor Interrupt and Exception Handlers ---------------------------------------------------------------
 
-void NMI_Handler(void) { while(1); }
-void HardFault_Handler(void) { while (1); }
-void MemManage_Handler(void) { while (1); }
-void BusFault_Handler(void) { while (1); }
-void UsageFault_Handler(void) { while (1); }
-void SecureFault_Handler(void) { while (1); }
+void NMI_Handler(void) { system_reset(); }
+void HardFault_Handler(void) { system_reset(); }
+void MemManage_Handler(void) { system_reset(); }
+void BusFault_Handler(void) { system_reset(); }
+void UsageFault_Handler(void) { system_reset(); }
+void SecureFault_Handler(void) { system_reset(); }
 void SVC_Handler(void) {}
 void DebugMon_Handler(void) {}
 void PendSV_Handler(void) {}
 void SysTick_Handler(void) { sys_tick++; }
-void Error_Handler(void) { __disable_irq(); while (1); }
+void Error_Handler(void) { __disable_irq(); system_reset(); }
 
 
 // System Initialization Functions and Definitions ---------------------------------------------------------------------
@@ -608,8 +612,102 @@ void system_init(void)
 
 void system_reset(void)
 {
+#ifndef CUSTOM_SYSTEM_RESET
+
    // Fully reset chip
    NVIC_SystemReset();
+
+#else
+
+   // Determine the system reset address
+   uint32_t sysmem_addr = 0x34180400;
+   uint32_t jump_address = *(volatile uint32_t *)(sysmem_addr + 4U);
+
+   // Deinitialize all peripherals
+   comms_deinit();
+   ai_deinit();
+   storage_deinit();
+   flash_deinit();
+
+   // Disable and clear all interrupts except the default one
+   __disable_irq();
+   WRITE_REG(RCC->CIER, RCC_CIER_HSECSSIE);
+   WRITE_REG(RCC->CICR, RCC_CICR_LSIRDYC | RCC_CICR_LSERDYC | RCC_CICR_MSIRDYC | RCC_CICR_HSIRDYC | RCC_CICR_HSERDYC | RCC_CICR_PLL1RDYC | RCC_CICR_PLL2RDYC | RCC_CICR_PLL3RDYC | RCC_CICR_PLL4RDYC | RCC_CICR_LSECSSC | RCC_CICR_HSECSSC | RCC_CICR_WKUPFC);
+
+   // Clear the reset source flags, and select HSI as the CPU and system bus clock
+   SET_BIT(RCC->RSR, RCC_RSR_RMVF);
+   CLEAR_REG(RCC->CFGR1);
+   while (READ_BIT(RCC->CFGR1, (RCC_CFGR1_CPUSWS | RCC_CFGR1_SYSSWS)));
+   SystemCoreClock = HSI_VALUE;
+
+   // Reset all PLL registers to their default values
+   WRITE_REG(RCC->PLL1CFGR1, 0x08202500U);
+   WRITE_REG(RCC->PLL1CFGR2, 0x00800000U);
+   WRITE_REG(RCC->PLL1CFGR3, 0x4900000DU);
+   WRITE_REG(RCC->PLL2CFGR1, 0x08000000U);
+   WRITE_REG(RCC->PLL2CFGR2, 0x00000000U);
+   WRITE_REG(RCC->PLL2CFGR3, 0x49000005U);
+   WRITE_REG(RCC->PLL3CFGR1, 0x08000000U);
+   WRITE_REG(RCC->PLL3CFGR2, 0x00000000U);
+   WRITE_REG(RCC->PLL3CFGR3, 0x49000005U);
+   WRITE_REG(RCC->PLL4CFGR1, 0x08000000U);
+   WRITE_REG(RCC->PLL4CFGR2, 0x00000000U);
+   WRITE_REG(RCC->PLL4CFGR3, 0x49000005U);
+   WRITE_REG(RCC->CCR, RCC_CCR_MSIONC | RCC_CCR_HSEONC | RCC_CCR_PLL1ONC | RCC_CCR_PLL2ONC | RCC_CCR_PLL3ONC | RCC_CCR_PLL4ONC);
+   while (READ_BIT(RCC->SR, (RCC_SR_PLL1RDY | RCC_SR_PLL2RDY | RCC_SR_PLL3RDY | RCC_SR_PLL4RDY)));
+
+   // Reset default system registers
+   WRITE_REG(RCC->CFGR2, 0x00100000U);
+   CLEAR_REG(RCC->MSICFGR);
+   WRITE_REG(RCC->HSIMCR, 0x001F07A1U);
+   WRITE_REG(RCC->HSECFGR, 0x00000800U);
+   WRITE_REG(RCC->STOPCR, 0x00000002U);
+   CLEAR_BIT(RCC->MISCENR, RCC_MISCENR_MCO1EN | RCC_MISCENR_MCO2EN);
+
+   // Reset all peripherals (except APB4)
+   __HAL_RCC_APB1_FORCE_RESET();
+   __HAL_RCC_APB1_RELEASE_RESET();
+   __HAL_RCC_APB2_FORCE_RESET();
+   __HAL_RCC_APB2_RELEASE_RESET();
+   __HAL_RCC_APB5_FORCE_RESET();
+   __HAL_RCC_APB5_RELEASE_RESET();
+   __HAL_RCC_AHB1_FORCE_RESET();
+   __HAL_RCC_AHB1_RELEASE_RESET();
+   __HAL_RCC_AHB2_FORCE_RESET();
+   __HAL_RCC_AHB2_RELEASE_RESET();
+   __HAL_RCC_AHB3_FORCE_RESET();
+   __HAL_RCC_AHB3_RELEASE_RESET();
+   __HAL_RCC_AHB4_FORCE_RESET();
+   __HAL_RCC_AHB4_RELEASE_RESET();
+   __HAL_RCC_AHB5_FORCE_RESET();
+   __HAL_RCC_AHB5_RELEASE_RESET();
+
+   // Ensure SysTick is disabled
+   SysTick->CTRL = 0;
+   SysTick->LOAD = 0;
+   SysTick->VAL  = 0;
+
+   // Disable and clean all caches
+   SCB_DisableICache();
+   SCB_DisableDCache();
+
+   // Clear all pending NVIC interrupts
+   for (uint32_t i = 0; i < (sizeof(NVIC->ICER) / sizeof(NVIC->ICER[0])); ++i)
+   {
+      NVIC->ICER[i] = 0xFFFFFFFF;
+      NVIC->ICPR[i] = 0xFFFFFFFF;
+   }
+   __enable_irq();
+
+   // Set the MSP to the application stack pointer
+   __set_MSP(*(volatile uint32_t *)sysmem_addr);
+
+   // Get the Reset_Handler function and jump to it
+   typedef void (*pFunction)(void);
+   pFunction SysMemBootJump = (pFunction)jump_address;
+   SysMemBootJump();
+
+#endif  // #ifndef CUSTOM_SYSTEM_RESET
 }
 
 void system_finalize(void)
