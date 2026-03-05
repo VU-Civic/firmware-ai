@@ -715,6 +715,8 @@ void system_finalize(void)
    // Disable SysTick interrupts
    CLEAR_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
 
+#ifdef USE_WATCHDOG
+
    // Enable an independent watchdog that resets if not fed within 16 seconds
    SET_BIT(DBGMCU->APB4FZ1, DBGMCU_APB4FZ1_DBG_IWDG_STOP);
    WRITE_REG(IWDG->KR, IWDG_KEY_ENABLE);
@@ -726,6 +728,8 @@ void system_finalize(void)
    WRITE_REG(IWDG->EWCR, 0U);
    while (READ_BIT(IWDG->SR, (IWDG_SR_EWU | IWDG_SR_WVU | IWDG_SR_RVU | IWDG_SR_PVU)));
    WRITE_REG(IWDG->KR, IWDG_KEY_RELOAD);
+
+#endif  // #ifdef USE_WATCHDOG
 
 #if REV_ID < REV_C
 
@@ -747,8 +751,12 @@ void system_sleep(void)
 
 void system_feed_watchdog(void)
 {
+#ifdef USE_WATCHDOG
+
    // Reset the independent watchdog timer
    WRITE_REG(IWDG->KR, IWDG_KEY_RELOAD);
+
+#endif  // #ifdef USE_WATCHDOG
 }
 
 void system_delay(uint32_t ms)
