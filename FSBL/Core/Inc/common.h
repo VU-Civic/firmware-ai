@@ -74,7 +74,10 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
    int32_t q1, q2, q3;
    char imei[CELL_IMEI_LENGTH+1], imsi[CELL_IMSI_LENGTH+1];
    ai_config_t ai_config;
-   uint8_t reserved[6];
+   uint8_t channel_alarms;
+   uint8_t onset_detected;
+   double onset_timestamp;
+   uint8_t reserved[12];
    uint8_t end_delimiter[4];
 } audio_packet_t;
 
