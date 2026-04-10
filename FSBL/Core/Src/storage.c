@@ -49,7 +49,7 @@ static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_nu
 static char time_string[10], audio_directory[14], file_name[32];
 static uint8_t work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
-static double current_timestamp;
+static double next_timestamp;
 
 #ifdef USE_FLAC_ENCODER
 
@@ -895,7 +895,7 @@ void storage_init(void)
 {
    // Initialize all static variables
    extended_timeout = 1;
-   current_timestamp = 6400.0;
+   next_timestamp = 6400.0;
    sd_card_status = STA_NOINIT;
    output_buffer_len = samples_written = audio_file_open = 0;
    timeout_num_cycles = ((SystemCoreClock + AUDIO_PACKET_SAMPLE_RATE) / AUDIO_PACKET_SAMPLE_RATE) * AUDIO_PACKET_NUM_SAMPLES * 2;
@@ -1029,14 +1029,16 @@ void storage_handle_sd_card_state_change(void)
 void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Open a new file on the SD card
-   if (sd_card_open_file((uint32_t)current_timestamp, audio_data, ai_results, clip_length_seconds))
+   if (sd_card_open_file((uint32_t)next_timestamp, audio_data, ai_results, clip_length_seconds))
    {
       // Write stored historical audio to the file
 #ifdef USE_FLAC_ENCODER
+#ifndef NO_FLAC_HISTORY
       for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
          sd_card_write_audio_file(&pcm_history[i]);
       for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
          sd_card_write_audio_file(&pcm_history[i]);
+#endif
 #endif
    }
 }
@@ -1046,9 +1048,9 @@ void storage_write_audio_file(volatile audio_packet_t *audio_data)
    // Keep track of the most recently received audio timestamp
    const double audio_timestamp = audio_data->timestamp;
    if (audio_timestamp < 1000.0)
-      current_timestamp += 1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES);
+      next_timestamp += 1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES);
    else
-      current_timestamp = audio_timestamp + (1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES));
+      next_timestamp = audio_timestamp + (1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES));
 
    // Update the historical PCM data and write the audio to a currently open file
 #ifdef USE_FLAC_ENCODER

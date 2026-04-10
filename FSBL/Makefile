@@ -78,9 +78,15 @@ debug: DEFINES += -DUSE_FLAC_ENCODER
 debug: directories $(EXECUTABLE) secondary-outputs
 	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s --align
 
-sd: CFLAGS += -Ofast
-sd: DEFINES += -DPACKET_FULL_AUDIO
-sd: directories $(SD_EXECUTABLE) $(SD_BINARY)
+sd1: CFLAGS += -Ofast
+sd1: DEFINES += -DUSE_FLAC_ENCODER -DNO_FLAC_HISTORY
+sd1: directories $(SD_EXECUTABLE) $(SD_BINARY)
+	$(SIGN) -bin $(SD_BINARY) -nk -of 0x80000000 -t fsbl -o $(SD_SIGNED) -hv 2.3 -dump $(SD_SIGNED) -s --align
+	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(SD_SIGNED) 0x70000000 -v
+
+sd4: CFLAGS += -Ofast
+sd4: DEFINES += -DPACKET_FULL_AUDIO
+sd4: directories $(SD_EXECUTABLE) $(SD_BINARY)
 	$(SIGN) -bin $(SD_BINARY) -nk -of 0x80000000 -t fsbl -o $(SD_SIGNED) -hv 2.3 -dump $(SD_SIGNED) -s --align
 	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(SD_SIGNED) 0x70000000 -v
 
@@ -133,4 +139,4 @@ clean:
 flash: all
 	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(SIGNED) 0x70000000 -v
 
-.PHONY: all debug sd test directories secondary-outputs clean flash
+.PHONY: all debug sd1 sd4 test directories secondary-outputs clean flash

@@ -33,7 +33,7 @@ ifndef STM32_AI_PATH
 $(error You must add $(WEIGHTS_GEN) to the PATH or specify the STM32_AI_PATH to continue)
 endif
 
-.PHONY: all debug sd test loader checkloader weights flash flashw clean
+.PHONY: all debug sd1 sd4 test loader checkloader weights flash flashw clean
 
 all:
 	$(MAKE) -C FSBL all
@@ -41,8 +41,11 @@ all:
 debug:
 	$(MAKE) -C FSBL debug
 
-sd:
-	$(MAKE) -C FSBL sd
+sd1:
+	$(MAKE) -C FSBL sd1
+
+sd4:
+	$(MAKE) -C FSBL sd4
 
 test:
 	$(MAKE) -C FSBL test

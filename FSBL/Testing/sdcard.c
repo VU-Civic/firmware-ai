@@ -48,6 +48,9 @@ int main(void)
       audio_data = comms_incoming_data();
       if (audio_data)
       {
+         // Transmit fake results back to the host
+         comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
+
          // Always try to create a new SD card audio file (will only succeed if previous file was closed)
          storage_open_audio_file(audio_data, &ai_results, audio_data->ai_config.audio_clip_length_seconds);
          storage_write_audio_file(audio_data);
