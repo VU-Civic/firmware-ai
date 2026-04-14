@@ -313,16 +313,30 @@ static void to_host_i2c_init(void)
 
 void comms_init(void)
 {
-   // Initialize MCU host communications in both directions
+   // Delay briefly before attempting to enable host communications
    incoming_data = 0;
+   uint32_t tick_start = DWT->CYCCNT;
+   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 3));
+
+   // Initialize MCU host communications in both directions
    to_host_i2c_init();
    from_host_spi_init();
+
+   // Delay again briefly after enabling host communications
+   tick_start = DWT->CYCCNT;
+   while ((DWT->CYCCNT - tick_start) < (2 * SystemCoreClock / 3));
 }
 
 void comms_acknowledge_host(void)
 {
    // Assert the AI interrupt line low to wake up the host
    WRITE_REG(HOST_WAKEUP_GPIO_Port->BRR, HOST_WAKEUP_Pin);
+}
+
+void comms_unacknowledge_host(void)
+{
+   // De-assert the AI interrupt line to notify host of comms error
+   WRITE_REG(HOST_WAKEUP_GPIO_Port->BSRR, HOST_WAKEUP_Pin);
 }
 
 uint8_t comms_data_available(void)

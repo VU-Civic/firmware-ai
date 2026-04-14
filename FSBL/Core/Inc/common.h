@@ -31,6 +31,7 @@
 #define AUDIO_PACKET_TOTAL_SAMPLES                    (AUDIO_PACKET_NUM_CHANNELS * AUDIO_PACKET_NUM_SAMPLES)
 #define AUDIO_PACKET_START_DELIMITER                  { 0xAE, 0xA0, 0xA2, 0xF5 }
 #define AUDIO_PACKET_END_DELIMITER                    { 0xFE, 0xF0, 0xF2, 0x25 }
+#define AUDIO_PACKET_RECEPTION_TIMEOUT_SECONDS        3
 
 #define AI_FIRMWARE_VERSION_LENGTH                    8
 #define AI_NUM_CLASSES                                1

@@ -5,6 +5,7 @@
 
 void comms_init(void);
 void comms_acknowledge_host(void);
+void comms_unacknowledge_host(void);
 uint8_t comms_data_available(void);
 void comms_transmit(uint8_t *data, uint8_t data_len);
 volatile audio_packet_t* comms_incoming_data(void);
