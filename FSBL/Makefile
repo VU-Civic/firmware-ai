@@ -79,7 +79,6 @@ debug: directories $(EXECUTABLE) secondary-outputs
 	$(SIGN) -bin $(BINARY) -nk -of 0x80000000 -t fsbl -o $(SIGNED) -hv 2.3 -dump $(SIGNED) -s --align
 
 sd1: CFLAGS += -Ofast
-sd1: DEFINES += -DUSE_FLAC_ENCODER -DNO_FLAC_HISTORY
 sd1: directories $(SD_EXECUTABLE) $(SD_BINARY)
 	$(SIGN) -bin $(SD_BINARY) -nk -of 0x80000000 -t fsbl -o $(SD_SIGNED) -hv 2.3 -dump $(SD_SIGNED) -s --align
 	$(STM32_PRG_PATH)/$(FLASH) -c port=SWD mode=UR -el $(STM32_PRG_PATH)/ExternalLoader/$(LOADER) -d $(SD_SIGNED) 0x70000000 -v

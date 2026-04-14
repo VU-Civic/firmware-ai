@@ -429,16 +429,16 @@ static void sd_card_update_directories(uint32_t audio_timestamp)
    }
 }
 
-static void sd_card_store_audio_metadata(volatile audio_packet_t *audio_data, const ai_data_t *ai_results)
+static void sd_card_store_audio_metadata(double audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results)
 {
    snprintf(file_name, sizeof(file_name), "%s/%s.meta", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
    if (audio_file_open)
    {
       UINT data_written;
-      static char line_buffer[32];
-      uint32_t whole = (uint32_t)audio_data->timestamp, fraction = (uint32_t)((audio_data->timestamp - whole) * 1000);
-      int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %lu.%03lu\n", whole, fraction);
+      static char line_buffer[40];
+      uint32_t whole = (uint32_t)audio_timestamp, fraction = (uint32_t)((audio_timestamp - whole) * 1000000);
+      int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %lu.%06lu\n", whole, fraction);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
       num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Probability: %u%%\n", (unsigned int)ai_results->class_probabilities[0]);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
@@ -518,7 +518,7 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static uint8_t sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
+static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Extend the length of an existing audio file if already open
    if (!sd_card_initialized || audio_file_open)
@@ -530,10 +530,10 @@ static uint8_t sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet
    }
 
    // Determine if time to create a new storage directory
-   sd_card_update_directories(audio_timestamp);
+   sd_card_update_directories((uint32_t)audio_timestamp);
 
    // Store the corresponding audio metadata
-   sd_card_store_audio_metadata(audio_data, ai_results);
+   sd_card_store_audio_metadata(audio_timestamp, audio_data, ai_results);
 
    // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
@@ -605,17 +605,17 @@ static void sd_card_close_audio_file(void)
    }
 }
 
-static uint8_t sd_card_open_file(uint32_t audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
+static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Do not continue if the SD card is not initialized or an audio file is already open
    if (!sd_card_initialized || audio_file_open)
       return 0;
 
    // Determine if time to create a new storage directory
-   sd_card_update_directories(audio_timestamp);
+   sd_card_update_directories((uint32_t)audio_timestamp);
 
    // Store the corresponding audio metadata
-   sd_card_store_audio_metadata(audio_data, ai_results);
+   sd_card_store_audio_metadata(audio_timestamp, audio_data, ai_results);
 
    // Open the requested audio file
    snprintf(file_name, sizeof(file_name), "%s/%s.wav", audio_directory, time_string);
@@ -1031,16 +1031,14 @@ void storage_handle_sd_card_state_change(void)
 void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Open a new file on the SD card
-   if (sd_card_open_file((uint32_t)next_timestamp, audio_data, ai_results, clip_length_seconds))
+   if (sd_card_open_file(next_timestamp, audio_data, ai_results, clip_length_seconds))
    {
       // Write stored historical audio to the file
 #ifdef USE_FLAC_ENCODER
-#ifndef NO_FLAC_HISTORY
       for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
          sd_card_write_audio_file(&pcm_history[i]);
       for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
          sd_card_write_audio_file(&pcm_history[i]);
-#endif
 #endif
    }
 }
