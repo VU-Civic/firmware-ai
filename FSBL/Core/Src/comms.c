@@ -230,7 +230,8 @@ static void from_host_spi_init(void)
 
    // Reset the SPI DMA peripheral
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN));
+   while (READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN))
+      SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
 
    // Initialize the SPI host-to-AI communications peripheral
    CLEAR_BIT(SPI1->CR1, SPI_CR1_SPE);
@@ -287,7 +288,8 @@ static void to_host_i2c_init(void)
 
    // Reset and configure the I2C DMA peripheral
    SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN));
+   while (READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN))
+      SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
    i2c_dma_setup();
 
    // Initialize the I2C AI-to-host communications peripheral for Fast Mode Plus (1Mbit/s)
