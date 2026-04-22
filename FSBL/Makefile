@@ -10,7 +10,7 @@ MAP_FILE := $(BUILD)/$(TARGET).map
 SIZE_OUTPUT := default.size.stdout
 OBJDUMP_LIST := $(BUILD)/$(TARGET).list
 LINKER_FILE := STM32N647_CivicAlert.ld
-AI_LINKER_FILE := NetworkRuntime1100_CM55_GCC
+AI_LINKER_FILE := NetworkRuntime1200_CM55_GCC
 
 SD_TARGET := Sd$(TARGET)
 SD_EXECUTABLE := $(BUILD)/$(SD_TARGET).elf
