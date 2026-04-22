@@ -17,7 +17,7 @@
 #define AI_FFT_STEP_SIZE                       200    // Must be 100, 125, 160, 200, 250, 320, 400, 500, 800, or 1000 and <= AI_FFT_FILTER_SIZE
 #define AI_FFT_WINDOW_SIZE                     800    // Must be <= AI_FFT_FILTER_SIZE and >= AI_FFT_STEP_SIZE
 
-#define AI_SPECTROGRAM_MIN_FREQUENCY_HZ        20
+#define AI_SPECTROGRAM_MIN_FREQUENCY_HZ        200
 #define AI_SPECTROGRAM_MAX_FREQUENCY_HZ        16000
 #define AI_SPECTROGRAM_NUM_MELS                AI_INPUT_NUM_ROWS   // If num_mels != num_rows, spectrogram output must be upscaled
 #define AI_SPECTROGRAM_NUM_TIME_STEPS          AI_INPUT_NUM_COLUMNS   // If num_time_steps != num_columns, tspectrogram output must be upscaled
@@ -30,12 +30,16 @@
 #define SCALING_TYPE_MIN_MAX                   1
 #define SCALING_TYPE_ABS_MAX                   2
 #define SCALING_TYPE_Z_SCORE                   3
+#define SCALING_TYPE_CUSTOM_RANGE              4
+
+#define CUSTOM_SCALING_MIN_VALUE               -80.0f
+#define CUSTOM_SCALING_MAX_VALUE               30.0f
 
 #define AI_USE_POWER_SPECTROGRAM               1
 #define AI_USE_MEL_SLANEY_FORMULA              0
 #define AI_USE_MEL_ENERGY_NORMALIZATION        0
 #define AI_MEL_SPECTROGRAM_SCALING_TYPE        MEL_SPECTROGRAM_DB_SCALING
-#define AI_INPUT_SCALING_TYPE                  SCALING_TYPE_MIN_MAX
+#define AI_INPUT_SCALING_TYPE                  SCALING_TYPE_CUSTOM_RANGE
 
 #define AI_FFT_INPUT_PADDING_END_INDEX         ((AI_FFT_FILTER_SIZE - AI_FFT_WINDOW_SIZE) / 2)
 #define AI_NUM_TIME_STEPS_PER_PACKET           (AUDIO_PACKET_NUM_SAMPLES / AI_FFT_STEP_SIZE)
@@ -252,7 +256,7 @@ void ai_init(void)
    WRITE_REG(RCC->MEMENCR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
 }
 
-void ai_process(volatile audio_packet_t *packet, uint8_t *output)
+float ai_process(volatile audio_packet_t *packet)
 {
    // Set up all necessary AI processing buffers
    static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE];
@@ -303,10 +307,15 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    arm_absmax_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &abs_max_value);
    if (abs_max_value > 0.0f)
       arm_scale_f32(data_in, 1.0f / abs_max_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-#elif AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX   // Normalize the spectrogram using Min-Max scaling
+#elif (AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX || AI_INPUT_SCALING_TYPE == SCALING_TYPE_CUSTOM_RANGE)   // Normalize the spectrogram using Min-Max or custom scaling
+ #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX
    float min_value, max_value;
    arm_max_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &max_value);
    arm_min_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &min_value);
+ #else
+   const float min_value = CUSTOM_SCALING_MIN_VALUE;
+   const float max_value = CUSTOM_SCALING_MAX_VALUE;
+ #endif
    if (min_value != max_value)
    {
       const float scaler = 2.0f / (max_value - min_value);
@@ -336,8 +345,7 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
 
    // Process the classification output
-   for (uint32_t i = 0; i < AI_NUM_CLASSES; ++i)
-      output[i] = (uint8_t)(100.0f * (1.0f - data_out[i]));
+   const float output = data_out[AI_GUNSHOT_CLASS_INDEX];
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
@@ -347,4 +355,5 @@ void ai_process(volatile audio_packet_t *packet, uint8_t *output)
    SET_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
    WRITE_REG(RCC->MEMENCR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
    system_feed_watchdog();
+   return output;
 }
