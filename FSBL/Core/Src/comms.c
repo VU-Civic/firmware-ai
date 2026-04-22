@@ -313,20 +313,21 @@ static void to_host_i2c_init(void)
 
 // Public API Functions ------------------------------------------------------------------------------------------------
 
-void comms_init(void)
+void comms_init(uint8_t reinit)
 {
    // Delay briefly before attempting to enable host communications
    incoming_data = 0;
-   uint32_t tick_start = DWT->CYCCNT;
-   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 3));
+   //uint32_t tick_start = DWT->CYCCNT;
+   //while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 3));
 
    // Initialize MCU host communications in both directions
    to_host_i2c_init();
-   from_host_spi_init();
+   if (!reinit)
+      from_host_spi_init();
 
    // Delay again briefly after enabling host communications
-   tick_start = DWT->CYCCNT;
-   while ((DWT->CYCCNT - tick_start) < (2 * SystemCoreClock / 3));
+   //tick_start = DWT->CYCCNT;
+   //while ((DWT->CYCCNT - tick_start) < (2 * SystemCoreClock / 3));
 }
 
 void comms_acknowledge_host(void)

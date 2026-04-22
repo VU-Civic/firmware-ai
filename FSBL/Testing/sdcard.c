@@ -11,16 +11,16 @@ int main(void)
    flash_init();
    storage_init();
    ai_init();
-   comms_init();
+   comms_init(0);
 
    // Finalize the system configuration
    ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
    const uint32_t reception_timeout = AUDIO_PACKET_RECEPTION_TIMEOUT_SECONDS * SystemCoreClock;
    volatile audio_packet_t *audio_data = 0;
-   uint32_t last_reception_time = 0;
    system_finalize();
 
    // Wait until a valid data packet has been received
+   uint32_t last_reception_time = DWT->CYCCNT;
    while (!audio_data)
    {
       // Check if a new valid packet has been received
@@ -33,8 +33,12 @@ int main(void)
       }
       else
       {
+         if ((DWT->CYCCNT - last_reception_time) >= reception_timeout)
+         {
+            last_reception_time = DWT->CYCCNT;
+            comms_init(1);
+         }
          audio_data = 0;
-         comms_init();
       }
    }
 
@@ -64,7 +68,7 @@ int main(void)
          // Signal an error to the host and attempt to re-initialize communications
          last_reception_time = DWT->CYCCNT;
          comms_unacknowledge_host();
-         comms_init();
+         comms_init(1);
       }
 
       // Put the CPU to sleep if nothing left to process

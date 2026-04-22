@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-void comms_init(void);
+void comms_init(uint8_t reinit);
 void comms_acknowledge_host(void);
 void comms_unacknowledge_host(void);
 uint8_t comms_data_available(void);
