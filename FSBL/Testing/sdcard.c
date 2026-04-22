@@ -33,6 +33,7 @@ int main(void)
       }
       else
       {
+         // Re-initialize comm peripherals if no data for too long
          if ((DWT->CYCCNT - last_reception_time) >= reception_timeout)
          {
             last_reception_time = DWT->CYCCNT;

@@ -310,24 +310,72 @@ static void to_host_i2c_init(void)
    NVIC_EnableIRQ(I2C3_ER_IRQn);
 }
 
+static void from_host_spi_deinit(void)
+{
+   // Disable all DMA and SPI CS de-assertion interrupts (2x to be sure since the handlers re-enable each other)
+   NVIC_DisableIRQ(EXTI15_IRQn);
+   NVIC_DisableIRQ(GPDMA1_Channel0_IRQn);
+   NVIC_DisableIRQ(EXTI15_IRQn);
+   NVIC_DisableIRQ(GPDMA1_Channel0_IRQn);
+
+   // Abort all DMA and SPI transfers
+   const uint32_t tick_start = DWT->CYCCNT;
+   SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_SUSP);
+   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4));
+   WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
+   SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
+   CLEAR_BIT(SPI1->CR1, SPI_CR1_SPE);
+
+   // Ensure that the SPI DMA peripheral has been reset
+   SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
+   while (READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN))
+      SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
+}
+
+static void to_host_i2c_deinit(void)
+{
+   // Disable all necessary DMA and I2C interrupts
+   NVIC_DisableIRQ(I2C3_ER_IRQn);
+   NVIC_DisableIRQ(I2C3_EV_IRQn);
+   NVIC_DisableIRQ(GPDMA1_Channel1_IRQn);
+
+   // Abort all DMA and I2C transfers
+   const uint32_t tick_start = DWT->CYCCNT;
+   SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_SUSP);
+   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4));
+   WRITE_REG(GPDMA1_Channel1->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
+   SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
+
+   // Clear all I2C flags and flush the TX register
+   WRITE_REG(I2C3->ICR, (I2C_FLAG_BERR | I2C_FLAG_OVR | I2C_FLAG_ARLO | I2C_FLAG_AF | I2C_FLAG_STOPF));
+   if (READ_BIT(I2C3->ISR, I2C_FLAG_TXIS))
+      WRITE_REG(I2C3->TXDR, 0x00U);
+   if (READ_BIT(I2C3->ISR, I2C_FLAG_TXE))
+      SET_BIT(I2C3->ISR, I2C_FLAG_TXE);
+   CLEAR_BIT(I2C3->CR1, I2C_CR1_PE);
+
+   // Ensure that the I2C DMA peripheral has been reset
+   SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
+   while (READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN))
+      SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
+}
+
 
 // Public API Functions ------------------------------------------------------------------------------------------------
 
 void comms_init(uint8_t reinit)
 {
-   // Delay briefly before attempting to enable host communications
-   incoming_data = 0;
-   //uint32_t tick_start = DWT->CYCCNT;
-   //while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 3));
+   // Fully de-initialize host communications if this is a re-initialization
+   if (reinit)
+   {
+      from_host_spi_deinit();
+      to_host_i2c_deinit();
+   }
 
    // Initialize MCU host communications in both directions
+   incoming_data = 0;
    to_host_i2c_init();
-   if (!reinit)
-      from_host_spi_init();
-
-   // Delay again briefly after enabling host communications
-   //tick_start = DWT->CYCCNT;
-   //while ((DWT->CYCCNT - tick_start) < (2 * SystemCoreClock / 3));
+   from_host_spi_init();
 }
 
 void comms_acknowledge_host(void)
