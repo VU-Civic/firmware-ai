@@ -14,7 +14,7 @@ int main(void)
    comms_init(0);
 
    // Finalize the system configuration
-   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
+   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_outputs = { 0 } };
    const uint32_t reception_timeout = AUDIO_PACKET_RECEPTION_TIMEOUT_SECONDS * SystemCoreClock;
    volatile audio_packet_t *audio_data = 0;
    system_finalize();
@@ -58,11 +58,11 @@ int main(void)
          last_reception_time = DWT->CYCCNT;
 
          // Attempt to classify the audio and transmit the results back to the host
-         ai_process(audio_data, ai_results.class_probabilities);
+         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(audio_data);
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
 
          // Start a new SD card audio file if the gunshot probability was above the storage threshold
-         if (ai_results.class_probabilities[AI_GUNSHOT_CLASS_INDEX] >= audio_data->ai_config.storage_classification_threshold)
+         if (ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] >= audio_data->ai_config.storage_classification_threshold)
             storage_open_audio_file(audio_data, &ai_results, audio_data->ai_config.audio_clip_length_seconds);
          storage_write_audio_file(audio_data);
       }

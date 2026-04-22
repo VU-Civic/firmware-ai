@@ -440,9 +440,10 @@ static void sd_card_store_audio_metadata(double audio_timestamp, volatile audio_
       uint32_t whole = (uint32_t)audio_timestamp, fraction = (uint32_t)((audio_timestamp - whole) * 1000000);
       int num_chars = snprintf(line_buffer, sizeof(line_buffer), "Raw Timestamp: %lu.%06lu\n", whole, fraction);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
-      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Probability: %u%%\n", (unsigned int)ai_results->class_probabilities[0]);
+      int32_t whole_int = (int32_t)ai_results->class_outputs[0]; fraction = (uint32_t)(fabsf(ai_results->class_outputs[0] - whole_int) * 1000000000);
+      num_chars = snprintf(line_buffer, sizeof(line_buffer), "Gunshot Classification: %ld.%06lu\n", whole_int, fraction);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
-      int32_t whole_int = (int32_t)audio_data->lat; fraction = (uint32_t)(fabsf(audio_data->lat - whole_int) * 1000000000);
+      whole_int = (int32_t)audio_data->lat; fraction = (uint32_t)(fabsf(audio_data->lat - whole_int) * 1000000000);
       num_chars = snprintf(line_buffer, sizeof(line_buffer), "Lat: %ld.%09lu\n", whole_int, fraction);
       f_write(&audio_file, line_buffer, num_chars, &data_written);
       whole_int = (int32_t)audio_data->lon; fraction = (uint32_t)(fabsf(audio_data->lon - whole_int) * 1000000000);

@@ -14,7 +14,7 @@ int main(void)
    comms_init(0);
 
    // Finalize the system configuration
-   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
+   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_outputs = { 0 } };
    const uint32_t reception_timeout = AUDIO_PACKET_RECEPTION_TIMEOUT_SECONDS * SystemCoreClock;
    volatile audio_packet_t *audio_data = 0;
    system_finalize();

@@ -16,7 +16,7 @@ int main(void)
    comms_init();
 
    // Finalize the system configuration
-   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_probabilities = { 0 } };
+   ai_data_t ai_results = { .ai_firmware_version = FIRMWARE_REVISION, .class_outputs = { 0 } };
    volatile audio_packet_t *audio_data = 0;
    system_finalize();
 
@@ -40,7 +40,7 @@ int main(void)
       {
          __enable_irq();
          comms_acknowledge_host();
-         ai_results.class_probabilities[0] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0));
+         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0)) ? 1.0f : 0.0f;
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
          system_feed_watchdog();
       }

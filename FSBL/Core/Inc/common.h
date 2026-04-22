@@ -62,7 +62,7 @@ typedef struct
 
 typedef struct __attribute__ ((__packed__))
 {
-   uint8_t storage_classification_threshold;
+   float storage_classification_threshold;
    uint8_t audio_clip_length_seconds;
 } ai_config_t;
 
@@ -87,7 +87,7 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
 typedef struct __attribute__ ((__packed__))
 {
    uint8_t ai_firmware_version[AI_FIRMWARE_VERSION_LENGTH];
-   uint8_t class_probabilities[AI_NUM_CLASSES];
+   float class_outputs[AI_NUM_CLASSES];
 } ai_data_t;
 
 

@@ -4,6 +4,6 @@
 #include "common.h"
 
 void ai_init(void);
-void ai_process(volatile audio_packet_t *packet, uint8_t *output);
+float ai_process(volatile audio_packet_t *packet);
 
 #endif  // #ifndef __AI_HEADER_H__
