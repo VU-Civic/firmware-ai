@@ -78,6 +78,8 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
    uint8_t channel_alarms;
    uint8_t onset_detected;
    double onset_timestamp;
+   float onset_magnitude;
+   float angle_of_arrival[3];
    uint8_t reserved[12];
    uint8_t end_delimiter[4];
 } audio_packet_t;
