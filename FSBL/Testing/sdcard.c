@@ -57,7 +57,8 @@ int main(void)
          comms_acknowledge_host();
          last_reception_time = DWT->CYCCNT;
 
-         // Transmit fake results back to the host
+         // Attempt to classify the audio and transmit the results back to the host
+         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(audio_data);
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
 
          // Always try to create a new SD card audio file (will only succeed if previous file was closed)

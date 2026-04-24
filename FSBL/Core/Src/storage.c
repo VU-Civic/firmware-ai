@@ -524,9 +524,7 @@ static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t
    // Extend the length of an existing audio file if already open
    if (!sd_card_initialized || audio_file_open)
    {
-#ifndef NO_FLAC_HISTORY
       samples_written = 0;
-#endif
       return 0;
    }
 
