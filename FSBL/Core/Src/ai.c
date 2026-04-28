@@ -145,7 +145,6 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
    arm_q15_to_float(audio_data, input_signal, AI_FFT_WINDOW_SIZE);
 
    // Apply a Hanning window to the input signal (with implicit zero-padding)
-   memset(windowed_signal, 0, sizeof(windowed_signal));
    arm_mult_f32(input_signal, hanning_window, &windowed_signal[AI_FFT_INPUT_PADDING_END_INDEX], AI_FFT_WINDOW_SIZE);
 
    // Compute the FFT of the signal followed by its complex magnitude (optionally squared for power)
@@ -167,11 +166,12 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
    }
 
    // Apply log scaling to the Mel spectrogram
-   arm_offset_f32(feature_column, 1.0e-10f, feature_column, AI_SPECTROGRAM_NUM_MELS);
 #if AI_MEL_SPECTROGRAM_SCALING_TYPE == MEL_SPECTROGRAM_DB_SCALING
-   for (uint32_t bin = 0; bin < AI_SPECTROGRAM_NUM_MELS; ++bin)
-      feature_column[bin] = 10.0f * log10f(feature_column[bin]);
+   arm_offset_f32(feature_column, 1.0e-10f, feature_column, AI_SPECTROGRAM_NUM_MELS);
+   arm_vlog_f32(feature_column, feature_column, AI_SPECTROGRAM_NUM_MELS);
+   arm_scale_f32(feature_column, 10.0f / logf(10.0f), feature_column, AI_SPECTROGRAM_NUM_MELS);
 #elif AI_MEL_SPECTROGRAM_SCALING_TYPE == MEL_SPECTROGRAM_POWER_SCALING
+   arm_offset_f32(feature_column, 1.0e-10f, feature_column, AI_SPECTROGRAM_NUM_MELS);
    arm_vlog_f32(feature_column, feature_column, AI_SPECTROGRAM_NUM_MELS);
 #endif
 }
