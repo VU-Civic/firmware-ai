@@ -989,8 +989,12 @@ void storage_init(void)
    NVIC_EnableIRQ(EXTI12_IRQn);
    NVIC_SetPriority(SDMMC1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
    NVIC_EnableIRQ(SDMMC1_IRQn);
+}
 
+void storage_enable(void)
+{
    // Attempt to initialize the SD card
+   extended_timeout = 1;
    if (enable_sd_card())
    {
       // Mount the SD card file system
@@ -1087,6 +1091,7 @@ void storage_write_device_metadata_file(const char *fw_revision, volatile audio_
 uint8_t storage_test_peripheral(void)
 {
    // Return false if the SD card is not initialized
+   storage_enable();
    if (!sd_card_initialized)
       return 0;
 

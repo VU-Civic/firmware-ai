@@ -27,6 +27,7 @@ int main(void)
       audio_data = comms_incoming_data();
       if (audio_data && ((audio_data->imei[0] != 0) || (audio_data->imei[1] != 0) || (audio_data->imei[2] != 0)))
       {
+         storage_enable();
          storage_write_device_metadata_file(FIRMWARE_REVISION, audio_data);
          last_reception_time = DWT->CYCCNT;
          comms_acknowledge_host();
