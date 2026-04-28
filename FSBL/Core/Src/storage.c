@@ -148,15 +148,6 @@ static void request_sd_card_recovery(void)
    sd_recovery_last_attempt_tick = DWT->CYCCNT - ((SystemCoreClock + 3U) / 4U);
 }
 
-static void clean_dcache_region(const void *addr, uint32_t len)
-{
-   const uintptr_t line_size = (uintptr_t)__SCB_DCACHE_LINE_SIZE;
-   const uintptr_t start = (uintptr_t)addr;
-   const uintptr_t aligned_start = start & ~(line_size - 1U);
-   const uintptr_t aligned_end = (start + len + line_size - 1U) & ~(line_size - 1U);
-   SCB_CleanDCache_by_Addr((uint32_t*)aligned_start, (int32_t)(aligned_end - aligned_start));
-}
-
 static uint8_t enable_sd_card(void)
 {
    // Enable the SDMMC and GPIO clocks
@@ -731,7 +722,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 #else
       arm_copy_q15(audio_data, pcm, AUDIO_PACKET_NUM_SAMPLES);
 #endif
-      clean_dcache_region(pcm, sizeof(pcm));
+      system_clean_dcache_region(pcm, sizeof(pcm));
       if ((f_write(&audio_file, pcm, sizeof(pcm), &data_written) == FR_OK) && (data_written == sizeof(pcm)))
          system_feed_watchdog();
 

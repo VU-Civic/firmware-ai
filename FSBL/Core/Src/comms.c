@@ -2,6 +2,7 @@
 
 #include <arm_math.h>
 #include "comms.h"
+#include "system.h"
 
 
 // Host Communication Definitions --------------------------------------------------------------------------------------
@@ -401,6 +402,9 @@ void comms_transmit(uint8_t *data, uint8_t data_len)
    // Only proceed if the I2C peripheral is not currently busy
    if (!READ_BIT(I2C3->ISR, I2C_FLAG_BUSY))
    {
+      // Flush the D-cache for the transmit buffer so the DMA sees current data
+      system_clean_dcache_region(data, data_len);
+
       // Set up the DMA transfer data source and length
       WRITE_REG(GPDMA1_Channel1->CBR1, data_len);
       WRITE_REG(GPDMA1_Channel1->CSAR, (uint32_t)data);
@@ -415,9 +419,11 @@ void comms_transmit(uint8_t *data, uint8_t data_len)
 
 volatile audio_packet_t* comms_incoming_data(void)
 {
-   // Return incoming data and reset the pointer for the next packet
+   // Atomically return incoming data and reset the pointer for the next packet
+   __disable_irq();
    volatile audio_packet_t *data = (volatile audio_packet_t*)incoming_data;
    incoming_data = 0;
+   __enable_irq();
    return data;
 }
 

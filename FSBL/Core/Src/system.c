@@ -82,6 +82,10 @@ void Error_Handler(void) { __disable_irq(); system_reset(); }
 
 // System Initialization Functions and Definitions ---------------------------------------------------------------------
 
+#ifndef __SCB_DCACHE_LINE_SIZE
+#define __SCB_DCACHE_LINE_SIZE                32U
+#endif
+
 #define HSLV_OTP 124
 #define VDDIO2_HSLV_MASK (1U<<16)
 #define VDDIO3_HSLV_MASK (1U<<15)
@@ -811,4 +815,13 @@ void system_set_risaf_default(RISAF_TypeDef *risaf)
   WRITE_REG(risaf->REG[1].ENDR, get_risaf_max_addr(risaf));
   WRITE_REG(risaf->REG[1].CIDCFGR, RIF_CID_MASK | (RIF_CID_MASK << RISAF_REGx_CIDCFGR_WRENC0_Pos));
   WRITE_REG(risaf->REG[1].CFGR, RISAF_FILTER_ENABLE | (RIF_ATTRIBUTE_NSEC << RISAF_REGx_CFGR_SEC_Pos));
+}
+
+void system_clean_dcache_region(const void *addr, uint32_t len)
+{
+   const uintptr_t line_size = (uintptr_t)__SCB_DCACHE_LINE_SIZE;
+   const uintptr_t start = (uintptr_t)addr;
+   const uintptr_t aligned_start = start & ~(line_size - 1U);
+   const uintptr_t aligned_end = (start + len + line_size - 1U) & ~(line_size - 1U);
+   SCB_CleanDCache_by_Addr((uint32_t*)aligned_start, (int32_t)(aligned_end - aligned_start));
 }
