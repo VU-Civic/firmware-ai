@@ -38,14 +38,28 @@ typedef struct
    uint32_t address, num_clusters, cluster_size, num_sectors, sector_size;
 } sd_card_details_t;
 
+typedef struct __attribute__((__packed__))
+{
+   char riff_id[4];
+   uint32_t chunk_size;
+   char wave_id[4], fmt_id[4];
+   uint32_t subchunk1_size;
+   uint16_t audio_format, num_channels;
+   uint32_t sample_rate, byte_rate;
+   uint16_t block_align, bits_per_sample;
+   char data_id[4];
+   uint32_t subchunk2_size;
+} wav_header_t;
+
 
 // Static Storage Variables --------------------------------------------------------------------------------------------
 
 static volatile uint8_t audio_file_open;
 static volatile DSTATUS sd_card_status;
 static volatile uint32_t sd_xfer_context, sd_result_ready;
-static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed;
+static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed, sd_card_recovery_pending;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
+static uint32_t sd_recovery_last_attempt_tick;
 static char time_string[10], audio_directory[14], file_name[32];
 static uint8_t work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
@@ -107,6 +121,40 @@ static void disable_sd_card(void)
    sd_card_state_changed = 0;
    sd_card_initialized = 0;
    sd_result_ready = 0;
+   audio_file_open = 0;
+}
+
+static uint8_t mount_sd_card_file_system(void)
+{
+   char sd_card_path[4] = { 0 };
+   const MKFS_PARM opts = { .fmt = FM_EXFAT, .n_fat = 0, .align = 0, .n_root = 0, .au_size = 4096 };
+   const FRESULT res = f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
+   if (res == FR_OK)
+      return 1;
+   if (res != FR_NO_FILESYSTEM)
+      return 0;
+   if (f_mkfs((TCHAR const*)sd_card_path, &opts, work_buf, sizeof(work_buf)) != FR_OK)
+      return 0;
+   return (f_mount(&file_system, (TCHAR const*)sd_card_path, 1) == FR_OK);
+}
+
+static void request_sd_card_recovery(void)
+{
+   sd_card_recovery_pending = 1;
+   SET_BIT(sd_card_status, STA_NOINIT);
+   sd_rx_cplt = 0;
+   sd_tx_cplt = 0;
+   sd_result_ready = 1;
+   sd_recovery_last_attempt_tick = DWT->CYCCNT - ((SystemCoreClock + 3U) / 4U);
+}
+
+static void clean_dcache_region(const void *addr, uint32_t len)
+{
+   const uintptr_t line_size = (uintptr_t)__SCB_DCACHE_LINE_SIZE;
+   const uintptr_t start = (uintptr_t)addr;
+   const uintptr_t aligned_start = start & ~(line_size - 1U);
+   const uintptr_t aligned_end = (start + len + line_size - 1U) & ~(line_size - 1U);
+   SCB_CleanDCache_by_Addr((uint32_t*)aligned_start, (int32_t)(aligned_end - aligned_start));
 }
 
 static uint8_t enable_sd_card(void)
@@ -294,13 +342,21 @@ static uint8_t enable_sd_card(void)
          if ((!__SDMMC_GET_FLAG(SDMMC1, SDMMC_FLAG_RXFIFOE)) && (count < 16))
             sd_status[count++] = SDMMC_ReadFIFO(SDMMC1);
          else if (i >= 100000000)
-            system_reset();
+         {
+            request_sd_card_recovery();
+            disable_sd_card();
+            return 0;
+         }
       }
       for (uint32_t i = 0; __SDMMC_GET_FLAG(SDMMC1, SDMMC_FLAG_DPSMACT) && (count < 16) && (i <= 10000000); ++i)
       {
          sd_status[count++] = SDMMC_ReadFIFO(SDMMC1);
          if (i >= 10000000)
-            system_reset();
+         {
+            request_sd_card_recovery();
+            disable_sd_card();
+            return 0;
+         }
       }
       WRITE_REG(SDMMC1->ICR, SDMMC_STATIC_DATA_FLAGS);
       const uint8_t uhs_speed_grade = (uint8_t)((sd_status[3] & 0x00F0U) >> 4U);
@@ -367,7 +423,11 @@ static uint8_t enable_sd_card(void)
          if ((!__SDMMC_GET_FLAG(SDMMC1, SDMMC_FLAG_RXFIFOE)) && (count < 16))
             sd_status[count++] = SDMMC_ReadFIFO(SDMMC1);
          else if (i >= 100000000)
-            system_reset();
+         {
+            request_sd_card_recovery();
+            disable_sd_card();
+            return 0;
+         }
       }
       WRITE_REG(SDMMC1->ICR, SDMMC_STATIC_DATA_FLAGS);
       if ((((uint8_t*)sd_status)[13] & 2U) == 2U)
@@ -409,21 +469,32 @@ static void sd_card_update_directories(uint32_t audio_timestamp)
    {
       // Generate a new directory name from the current date and time
       uint8_t success = 1;
-      static FILINFO file_info;
       curr_time->tm_min = curr_time->tm_sec = 0;
       memset(audio_directory, 0, sizeof(audio_directory));
       strftime(audio_directory, sizeof(audio_directory), "%Y", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
+      if (success)
+      {
+         const FRESULT r = f_mkdir(audio_directory);
+         success = (r == FR_OK || r == FR_EXIST);
+      }
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
+      if (success)
+      {
+         const FRESULT r = f_mkdir(audio_directory);
+         success = (r == FR_OK || r == FR_EXIST);
+      }
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
+      if (success)
+      {
+         const FRESULT r = f_mkdir(audio_directory);
+         success = (r == FR_OK || r == FR_EXIST);
+      }
       strftime(audio_directory, sizeof(audio_directory), "%Y/%m/%d/%H", curr_time);
-      if (success && (f_stat(audio_directory, &file_info) != FR_OK))
-         success = (f_mkdir(audio_directory) == FR_OK);
+      if (success)
+      {
+         const FRESULT r = f_mkdir(audio_directory);
+         success = (r == FR_OK || r == FR_EXIST);
+      }
       if (success)
          audio_directory_timestamp = (uint32_t)mktime(curr_time);
    }
@@ -560,7 +631,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 {
    // Only proceed while there is an open file and outstanding audio samples
    uint32_t samples_remaining = AUDIO_PACKET_NUM_SAMPLES, read_index = 0;
-   while (sd_card_initialized && audio_file_open && samples_remaining)
+   while (sd_card_initialized && audio_file_open && !sd_card_recovery_pending && samples_remaining)
    {
       // Cast the audio data into the type expected by the FLAC encoder
       const uint32_t samples_to_copy = ((FLAC_ENCODER_BLOCK_SIZE <= samples_remaining) ? FLAC_ENCODER_BLOCK_SIZE : samples_remaining) - pcm_write_index;
@@ -625,26 +696,14 @@ static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t
    {
       // Reset the writer and write the WAV header
       UINT data_written;
-      uint16_t num_channels = AUDIO_PACKET_NUM_CHANNELS;
-      uint32_t field = 36, bytes_per_sample = 2, sample_rate_hz = AUDIO_PACKET_SAMPLE_RATE;
-      f_write(&audio_file, "RIFF", 4, &data_written);
-      f_write(&audio_file, &field, 4, &data_written);
-      f_write(&audio_file, "WAVE", 4, &data_written);
-      f_write(&audio_file, "fmt ", 4, &data_written);
-      field = 16;
-      f_write(&audio_file, &field, 4, &data_written);
-      field = 1;
-      f_write(&audio_file, &field, 2, &data_written);
-      f_write(&audio_file, &num_channels, 2, &data_written);
-      f_write(&audio_file, &sample_rate_hz, 4, &data_written);
-      field = sample_rate_hz * num_channels * bytes_per_sample;
-      f_write(&audio_file, &field, 4, &data_written);
-      field = num_channels * bytes_per_sample;
-      f_write(&audio_file, &field, 2, &data_written);
-      field = 8 * bytes_per_sample;
-      f_write(&audio_file, &field, 2, &data_written);
-      f_write(&audio_file, "data", 4, &data_written);
-      f_write(&audio_file, &field, 4, &data_written);
+      static const wav_header_t wav_header = {
+         .riff_id = "RIFF", .chunk_size = 36, .wave_id = "WAVE", .fmt_id = "fmt ",
+         .subchunk1_size = 16, .audio_format = 1, .num_channels = AUDIO_PACKET_NUM_CHANNELS,
+         .sample_rate = AUDIO_PACKET_SAMPLE_RATE, .byte_rate = AUDIO_PACKET_SAMPLE_RATE * AUDIO_PACKET_NUM_CHANNELS * 2,
+         .block_align = AUDIO_PACKET_NUM_CHANNELS * 2, .bits_per_sample = 16,
+         .data_id = "data", .subchunk2_size = 0,
+      };
+      f_write(&audio_file, &wav_header, sizeof(wav_header), &data_written);
       min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
       samples_written = 0;
    }
@@ -655,7 +714,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 {
    // Only proceed if there is an open audio file
    static int16_t pcm[AUDIO_PACKET_TOTAL_SAMPLES];
-   if (sd_card_initialized && audio_file_open)
+   if (sd_card_initialized && audio_file_open && !sd_card_recovery_pending)
    {
       // Interleave the audio samples
       UINT data_written = 0;
@@ -672,7 +731,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 #else
       arm_copy_q15(audio_data, pcm, AUDIO_PACKET_NUM_SAMPLES);
 #endif
-      SCB_CleanDCache_by_Addr(pcm, sizeof(pcm));
+      clean_dcache_region(pcm, sizeof(pcm));
       if ((f_write(&audio_file, pcm, sizeof(pcm), &data_written) == FR_OK) && (data_written == sizeof(pcm)))
          system_feed_watchdog();
 
@@ -690,6 +749,10 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 
 DSTATUS disk_initialize(BYTE)
 {
+   // Check whether SD card recovery is pending from a previous error
+   if (sd_card_recovery_pending)
+      return STA_NOINIT;
+
    // Send a "Send Status" command (CMD13) to the SD card
    WRITE_REG(sd_card_status, STA_NOINIT);
    WRITE_REG(SDMMC1->ARG, sd_card_details.address);
@@ -708,13 +771,15 @@ DSTATUS disk_initialize(BYTE)
 DSTATUS disk_status(BYTE)
 {
    // Simply return the previously determined disk status
-   return sd_card_status;
+   return sd_card_recovery_pending ? (sd_card_status | STA_NOINIT) : sd_card_status;
 }
 
 DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
 {
    // Verify that the SD card is available and not full
-   if (READ_BIT(sd_card_status, STA_NOINIT) || ((sector + count) > sd_card_details.num_sectors))
+   if (sd_card_recovery_pending || READ_BIT(sd_card_status, STA_NOINIT))
+      return RES_NOTRDY;
+   if ((sector + count) > sd_card_details.num_sectors)
       return RES_ERROR;
 
    // Fix the read sector address for SDSC cards
@@ -725,6 +790,9 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
    sd_rx_cplt = 0;
    for (uint32_t attempt = 0, sd_timed_out = 0; !sd_card_state_changed && !sd_timed_out && !sd_rx_cplt && (attempt < 2); ++attempt)
    {
+      const uint32_t sd_timeout_cycles = extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles;
+      const uint32_t sd_start_tick = DWT->CYCCNT;
+
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
       WRITE_REG(SDMMC1->DTIMER, 25000000);
@@ -745,8 +813,18 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
 
       // Wait until a response is received or the SD card changes state
       while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
-         sd_timed_out = (comms_cycles_since_data_received() >= (extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles));
+         sd_timed_out = ((DWT->CYCCNT - sd_start_tick) >= sd_timeout_cycles);
       sd_result_ready = 0;
+   }
+
+   // Abort the peripheral if the transfer timed out to leave hardware in a clean state
+   if (!sd_rx_cplt)
+   {
+      CLEAR_BIT(SDMMC1->MASK, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL | SDMMC_IT_DTIMEOUT | SDMMC_IT_DCRCFAIL | SDMMC_IT_RXOVERR | SDMMC_IT_DATAEND));
+      WRITE_REG(SDMMC1->DCTRL, 0U);
+      WRITE_REG(SDMMC1->IDMACTRL, SDMMC_DISABLE_IDMA);
+      CLEAR_BIT(SDMMC1->CMD, SDMMC_CMD_CMDTRANS);
+      WRITE_REG(SDMMC1->ICR, (SDMMC_STATIC_CMD_FLAGS | SDMMC_STATIC_DATA_FLAGS));
    }
    return !sd_rx_cplt;
 }
@@ -754,7 +832,9 @@ DRESULT disk_read(BYTE, BYTE *buff, LBA_t sector, UINT count)
 DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
 {
    // Verify that the SD card is available and not full
-   if (READ_BIT(sd_card_status, STA_NOINIT) || ((sector + count) > sd_card_details.num_sectors))
+   if (sd_card_recovery_pending || READ_BIT(sd_card_status, STA_NOINIT))
+      return RES_NOTRDY;
+   if ((sector + count) > sd_card_details.num_sectors)
       return RES_ERROR;
 
    // Fix the write sector address for SDSC cards
@@ -765,6 +845,9 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
    sd_tx_cplt = 0;
    for (uint32_t attempt = 0, sd_timed_out = 0; !sd_card_state_changed && !sd_timed_out && !sd_tx_cplt && (attempt < 2); ++attempt)
    {
+      const uint32_t sd_timeout_cycles = extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles;
+      const uint32_t sd_start_tick = DWT->CYCCNT;
+
       // Configure the SD DPSM (Data Path State Machine)
       WRITE_REG(SDMMC1->DCTRL, 0U);
       WRITE_REG(SDMMC1->DTIMER, 25000000);
@@ -785,8 +868,18 @@ DRESULT disk_write(BYTE, const BYTE *buff, LBA_t sector, UINT count)
 
       // Wait until a response is received or the SD card changes state
       while (!sd_result_ready && !sd_card_state_changed && !sd_timed_out)
-         sd_timed_out = (comms_cycles_since_data_received() >= (extended_timeout ? (5 * SystemCoreClock) : timeout_num_cycles));
+         sd_timed_out = ((DWT->CYCCNT - sd_start_tick) >= sd_timeout_cycles);
       sd_result_ready = 0;
+   }
+
+   // Abort the peripheral if the transfer timed out to leave hardware in a clean state
+   if (!sd_tx_cplt)
+   {
+      CLEAR_BIT(SDMMC1->MASK, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL | SDMMC_IT_DTIMEOUT | SDMMC_IT_DCRCFAIL | SDMMC_IT_TXUNDERR | SDMMC_IT_DATAEND));
+      WRITE_REG(SDMMC1->DCTRL, 0U);
+      WRITE_REG(SDMMC1->IDMACTRL, SDMMC_DISABLE_IDMA);
+      CLEAR_BIT(SDMMC1->CMD, SDMMC_CMD_CMDTRANS);
+      WRITE_REG(SDMMC1->ICR, (SDMMC_STATIC_CMD_FLAGS | SDMMC_STATIC_DATA_FLAGS));
    }
    return !sd_tx_cplt;
 }
@@ -795,7 +888,7 @@ DRESULT disk_ioctl(BYTE, BYTE cmd, void *buff)
 {
    // Verify that the disk has been initialized
    DRESULT res = RES_ERROR;
-   if (READ_BIT(sd_card_status, STA_NOINIT))
+   if (sd_card_recovery_pending || READ_BIT(sd_card_status, STA_NOINIT))
       return RES_NOTRDY;
 
    // Carry out the requested disk ioctl function
@@ -828,6 +921,7 @@ DRESULT disk_ioctl(BYTE, BYTE cmd, void *buff)
 void SDMMC1_IRQHandler(void)
 {
    // Handle the interrupt based on which flags are set
+   uint8_t transfer_completed = 1;
    if (READ_BIT(SDMMC1->STA, SDMMC_FLAG_DATAEND))
    {
       // Clear flags and disable interrupts
@@ -846,14 +940,23 @@ void SDMMC1_IRQHandler(void)
          MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (SDMMC_CMD_STOP_TRANSMISSION | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
          while (!READ_BIT(SDMMC1->STA, (SDMMC_FLAG_CCRCFAIL | SDMMC_FLAG_CMDREND | SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_BUSYD0END)) || READ_BIT(SDMMC1->STA, SDMMC_FLAG_CMDACT));
          if (READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0))
-            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0END));
+         {
+            const uint32_t busyd0_tick = DWT->CYCCNT;
+            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0END))
+               if ((DWT->CYCCNT - busyd0_tick) >= SystemCoreClock)
+               {
+                  request_sd_card_recovery();
+                  transfer_completed = 0;
+                  break;
+               }
+         }
          CLEAR_BIT(SDMMC1->CMD, SDMMC_CMD_CMDSTOP);
       }
 
       // Set the appropriate transfer complete flags
-      if ((sd_xfer_context == SDMMC_CMD_WRITE_SINGLE_BLOCK) || (sd_xfer_context == SDMMC_CMD_WRITE_MULT_BLOCK))
+      if (transfer_completed && ((sd_xfer_context == SDMMC_CMD_WRITE_SINGLE_BLOCK) || (sd_xfer_context == SDMMC_CMD_WRITE_MULT_BLOCK)))
          sd_tx_cplt = 1;
-      if ((sd_xfer_context == SDMMC_CMD_READ_SINGLE_BLOCK) || (sd_xfer_context == SDMMC_CMD_READ_MULT_BLOCK))
+      if (transfer_completed && ((sd_xfer_context == SDMMC_CMD_READ_SINGLE_BLOCK) || (sd_xfer_context == SDMMC_CMD_READ_MULT_BLOCK)))
          sd_rx_cplt = 1;
    }
    else if (READ_BIT(SDMMC1->STA, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL | SDMMC_FLAG_DTIMEOUT | SDMMC_FLAG_DCRCFAIL | SDMMC_FLAG_RXOVERR | SDMMC_FLAG_TXUNDERR)))
@@ -870,7 +973,15 @@ void SDMMC1_IRQHandler(void)
       MODIFY_REG(SDMMC1->CMD, CMD_CLEAR_MASK, (SDMMC_CMD_STOP_TRANSMISSION | SDMMC_RESPONSE_SHORT | SDMMC_WAIT_NO | SDMMC_CPSM_ENABLE));
       while (!READ_BIT(SDMMC1->STA, (SDMMC_FLAG_CCRCFAIL | SDMMC_FLAG_CMDREND | SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_BUSYD0END)) || READ_BIT(SDMMC1->STA, SDMMC_FLAG_CMDACT));
       if (READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0))
-         while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0END));
+      {
+         const uint32_t busyd0_tick = DWT->CYCCNT;
+         while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0END))
+            if ((DWT->CYCCNT - busyd0_tick) >= SystemCoreClock)
+            {
+               request_sd_card_recovery();
+               break;
+            }
+      }
       CLEAR_BIT(SDMMC1->CMD, SDMMC_CMD_CMDSTOP);
       WRITE_REG(SDMMC1->ICR, SDMMC_FLAG_DABORT);
 
@@ -898,6 +1009,8 @@ void storage_init(void)
    extended_timeout = 1;
    next_timestamp = 6400.0;
    sd_card_status = STA_NOINIT;
+   sd_card_recovery_pending = 0;
+   sd_recovery_last_attempt_tick = DWT->CYCCNT;
    output_buffer_len = samples_written = audio_file_open = 0;
    timeout_num_cycles = ((SystemCoreClock + AUDIO_PACKET_SAMPLE_RATE) / AUDIO_PACKET_SAMPLE_RATE) * AUDIO_PACKET_NUM_SAMPLES * 2;
 #ifdef USE_FLAC_ENCODER
@@ -995,38 +1108,44 @@ void storage_enable(void)
 {
    // Attempt to initialize the SD card
    extended_timeout = 1;
-   if (enable_sd_card())
-   {
-      // Mount the SD card file system
-      char sd_card_path[4] = { 0 };
-      const MKFS_PARM opts = { .fmt = FM_EXFAT, .n_fat = 0, .align = 0, .n_root = 0, .au_size = 4096 };
-      const FRESULT res = f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
-      if (((res == FR_NO_FILESYSTEM) && (f_mkfs((TCHAR const*)sd_card_path, &opts, work_buf, sizeof(work_buf)) != FR_OK)) || (res != FR_OK))
-         disable_sd_card();
-   }
-   else
+   sd_card_recovery_pending = 0;
+   if (!enable_sd_card() || !mount_sd_card_file_system())
       disable_sd_card();
    extended_timeout = 0;
 }
 
 void storage_handle_sd_card_state_change(void)
 {
+   // Attempt to recover a pending SD card error
+   if (sd_card_recovery_pending)
+   {
+      const uint32_t recovery_retry_cycles = (SystemCoreClock + 3U) / 4U;
+      if ((DWT->CYCCNT - sd_recovery_last_attempt_tick) < recovery_retry_cycles)
+         return;
+      sd_recovery_last_attempt_tick = DWT->CYCCNT;
+
+      extended_timeout = 1;
+      disable_sd_card();
+      if (READ_BIT(SD_CARD_DETECT_GPIO_Port->IDR, SD_CARD_DETECT_Pin))
+      {
+         if (enable_sd_card() && mount_sd_card_file_system())
+            sd_card_recovery_pending = 0;
+         else
+            disable_sd_card();
+      }
+      else
+         sd_card_recovery_pending = 0;
+      extended_timeout = 0;
+   }
+
    // Check whether an SD card state change has occurred
    if (sd_card_state_changed)
    {
       // Attempt to initialize or disable the SD card based on its detection status
       extended_timeout = 1;
-      if ((sd_card_state_changed - 1) && enable_sd_card())
-      {
-         // Mount the SD card file system
-         char sd_card_path[4] = { 0 };
-         const MKFS_PARM opts = { .fmt = FM_EXFAT, .n_fat = 0, .align = 0, .n_root = 0, .au_size = 4096 };
-         const FRESULT res = f_mount(&file_system, (TCHAR const*)sd_card_path, 1);
-         if (((res == FR_NO_FILESYSTEM) && (f_mkfs((TCHAR const*)sd_card_path, &opts, work_buf, sizeof(work_buf)) != FR_OK)) || (res != FR_OK))
-            disable_sd_card();
-      }
-      else
+      if (!(sd_card_state_changed - 1) || !enable_sd_card() || !mount_sd_card_file_system())
          disable_sd_card();
+      sd_card_recovery_pending = 0;
       extended_timeout = 0;
    }
 }
@@ -1034,7 +1153,7 @@ void storage_handle_sd_card_state_change(void)
 void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Open a new file on the SD card
-   if (sd_card_open_file(next_timestamp, audio_data, ai_results, clip_length_seconds))
+   if (!sd_card_recovery_pending && sd_card_open_file(next_timestamp, audio_data, ai_results, clip_length_seconds))
    {
       // Write stored historical audio to the file
 #ifdef USE_FLAC_ENCODER
@@ -1066,7 +1185,7 @@ void storage_write_audio_file(volatile audio_packet_t *audio_data)
 void storage_write_device_metadata_file(const char *fw_revision, volatile audio_packet_t *audio_data)
 {
    // Do not continue if the SD card is not initialized
-   if (!sd_card_initialized)
+   if (!sd_card_initialized || sd_card_recovery_pending)
       return;
 
    // Write the desired metadata to a new file
