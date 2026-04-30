@@ -306,6 +306,18 @@ void TIM2_IRQHandler(void)
    CLEAR_BIT(TIM2->SR, TIM2->SR);
 }
 
+#ifdef ENABLE_IAC
+
+void IAC_IRQHandler(void)
+{
+   // Spin forever
+   volatile uint32_t test = 0;
+   while (1)
+      test = 1;
+}
+
+#endif
+
 
 // Private Helper Functions --------------------------------------------------------------------------------------------
 
@@ -770,6 +782,46 @@ void system_finalize(void)
    NVIC_EnableIRQ(TIM2_IRQn);
    SET_BIT(TIM2->DIER, TIM_DIER_UIE);
    SET_BIT(TIM2->CR1, TIM_CR1_CEN);
+
+#ifdef ENABLE_IAC
+
+   // Enable the Invalid Access Control peripheral
+   WRITE_REG(RCC->AHB3ENSR, RCC_AHB3ENR_IACEN);
+   (void)READ_REG(RCC->AHB3ENR);
+   WRITE_REG(RCC->AHB3RSTSR, RCC_AHB3ENR_IACEN);
+   WRITE_REG(RCC->AHB3RSTCR, RCC_AHB3ENR_IACEN);
+   volatile uint32_t *iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_CM55 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_CM55 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RCC >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RCC & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_PWR >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_PWR & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF1 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF1 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF2 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF2 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF3 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF3 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF4 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF4 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF5 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF5 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF6 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF6 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF7 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF7 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF8 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF8 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF9 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF9 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RISAF15 >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RISAF15 & RIF_PERIPH_BIT_POSITION));
+   iac_interrupt_reg = &(IAC->IER[RIF_AWARE_PERIPH_INDEX_RIFSC >> RIF_PERIPH_REG_SHIFT]);
+   *iac_interrupt_reg |= (1UL << (RIF_AWARE_PERIPH_INDEX_RIFSC & RIF_PERIPH_BIT_POSITION));
+   NVIC_SetPriority(IAC_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+   NVIC_EnableIRQ(IAC_IRQn);
+
+#endif
 }
 
 void system_sleep(void)
