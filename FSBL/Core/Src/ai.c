@@ -145,6 +145,7 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
    arm_q15_to_float(audio_data, input_signal, AI_FFT_WINDOW_SIZE);
 
    // Apply a Hanning window to the input signal (with implicit zero-padding)
+   arm_fill_f32(0.0f, windowed_signal, AI_FFT_FILTER_SIZE);
    arm_mult_f32(input_signal, hanning_window, &windowed_signal[AI_FFT_INPUT_PADDING_END_INDEX], AI_FFT_WINDOW_SIZE);
 
    // Compute the FFT of the signal followed by its complex magnitude (optionally squared for power)
@@ -235,6 +236,10 @@ void ai_init(void)
    create_mel_filter_bank();
    arm_hanning_f32(hanning_window, AI_FFT_WINDOW_SIZE);
 
+   // Initialize the AI runtime
+   LL_ATON_RT_RuntimeInit();
+   LL_ATON_RT_Init_Network(&NN_Instance_civicalert);
+
    // Retrieve pointers to the AI input and output buffers
    const LL_Buffer_InfoTypeDef* input_buffers = LL_ATON_Input_Buffers_Info(&NN_Instance_civicalert);
    const LL_Buffer_InfoTypeDef* output_buffers = LL_ATON_Output_Buffers_Info(&NN_Instance_civicalert);
@@ -242,10 +247,6 @@ void ai_init(void)
    data_in_len = LL_Buffer_len(&input_buffers[0]);
    data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);
    data_out_len = LL_Buffer_len(&output_buffers[0]);
-
-   // Initialize the AI runtime
-   LL_ATON_RT_RuntimeInit();
-   LL_ATON_RT_Init_Network(&NN_Instance_civicalert);
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
@@ -298,20 +299,19 @@ float ai_process(volatile audio_packet_t *packet)
    // Store any pending audio data for the next packet
    arm_copy_q15((int16_t*)&packet->audio[AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE], pending_audio_data, AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
 
-   // Copy relevant part of the spectrogram into the AI network input tensor
-   arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-
    // Apply input normalization/scaling
 #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX   // Normalize the spectrogram using Abs-Max scaling
    float abs_max_value;
-   arm_absmax_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &abs_max_value);
+   arm_absmax_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &abs_max_value);
    if (abs_max_value > 0.0f)
-      arm_scale_f32(data_in, 1.0f / abs_max_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+      arm_scale_f32(spectrogram_buffer, 1.0f / abs_max_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+   else
+      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
 #elif (AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX || AI_INPUT_SCALING_TYPE == SCALING_TYPE_CUSTOM_RANGE)   // Normalize the spectrogram using Min-Max or custom scaling
  #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX
    float min_value, max_value;
-   arm_max_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &max_value);
-   arm_min_no_idx_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &min_value);
+   arm_max_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &max_value);
+   arm_min_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &min_value);
  #else
    const float min_value = CUSTOM_SCALING_MIN_VALUE;
    const float max_value = CUSTOM_SCALING_MAX_VALUE;
@@ -320,21 +320,26 @@ float ai_process(volatile audio_packet_t *packet)
    {
       const float scaler = 2.0f / (max_value - min_value);
       const float offset = -1.0f - (scaler * min_value);
-      arm_scale_f32(data_in, scaler, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+      arm_scale_f32(spectrogram_buffer, scaler, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
       arm_offset_f32(data_in, offset, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
    }
+   else
+      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
 #elif AI_INPUT_SCALING_TYPE == SCALING_TYPE_Z_SCORE   // Normalize the spectrogram using Z-Score scaling
    float mean_value, std_dev;
-   arm_mean_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &mean_value);
-   arm_std_f32(data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &std_dev);
+   arm_mean_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &mean_value);
+   arm_std_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &std_dev);
    if (std_dev > 0.0f)
    {
-      arm_offset_f32(data_in, -mean_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+      arm_offset_f32(spectrogram_buffer, -mean_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
       arm_scale_f32(data_in, 1.0f / std_dev, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
    }
+   else
+      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
 #endif  // #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX
 
-   // Run the inference loop and reset the AI runtime
+   // Reset the AI runtime and run the inference loop
+   LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
    LL_ATON_RT_RetValues_t ll_aton_rt_ret = LL_ATON_RT_DONE;
    do
    {
@@ -342,7 +347,6 @@ float ai_process(volatile audio_packet_t *packet)
       if (ll_aton_rt_ret == LL_ATON_RT_WFE)
          LL_ATON_OSAL_WFE();
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
-   LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
 
    // Process the classification output
    const float output = data_out[AI_GUNSHOT_CLASS_INDEX];
