@@ -60,15 +60,24 @@ typedef struct {
    float filter_weights[2*AI_FFT_FILTER_SIZE];
 } mel_filterbank_t;
 
+struct ai_state_t
+{
+   uint32_t packet_idx;
+   float *data_in, *data_out;
+   int16_t pending_audio_data[AI_FFT_WINDOW_SIZE];
+   float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS];
+   float fft_output[AI_FFT_FILTER_SIZE + 2], fft_magnitudes[(AI_FFT_FILTER_SIZE / 2) + 1];
+   float input_signal[AI_FFT_WINDOW_SIZE], windowed_signal[AI_FFT_FILTER_SIZE];
+};
+
 
 // Static AI Network Variables -----------------------------------------------------------------------------------------
 
 LL_ATON_DECLARE_NAMED_NN_INSTANCE_AND_INTERFACE(civicalert)
-static float *data_in, *data_out;
-static int32_t data_in_len, data_out_len;
 static float hanning_window[AI_FFT_WINDOW_SIZE];
 static arm_rfft_fast_instance_f32 fft;
 static mel_filterbank_t mel;
+ai_state_t ai_inference_state;
 
 
 // Private Helper Functions --------------------------------------------------------------------------------------------
@@ -135,34 +144,30 @@ static void create_mel_filter_bank(void)
    }
 }
 
-static void compute_feature_column(const int16_t *audio_data, float *feature_column)
+static void compute_feature_column(ai_state_t *state, const int16_t *audio_data, float *feature_column)
 {
-   // Statically define all feature extraction buffers
-   static float input_signal[AI_FFT_WINDOW_SIZE], windowed_signal[AI_FFT_FILTER_SIZE];
-   static float fft_output[AI_FFT_FILTER_SIZE+2], fft_magnitudes[(AI_FFT_FILTER_SIZE / 2) + 1];
-
    // Convert the audio signal to a normalized floating point representation
-   arm_q15_to_float(audio_data, input_signal, AI_FFT_WINDOW_SIZE);
+   arm_q15_to_float(audio_data, state->input_signal, AI_FFT_WINDOW_SIZE);
 
    // Apply a Hanning window to the input signal (with implicit zero-padding)
-   arm_fill_f32(0.0f, windowed_signal, AI_FFT_FILTER_SIZE);
-   arm_mult_f32(input_signal, hanning_window, &windowed_signal[AI_FFT_INPUT_PADDING_END_INDEX], AI_FFT_WINDOW_SIZE);
+   arm_fill_f32(0.0f, state->windowed_signal, AI_FFT_FILTER_SIZE);
+   arm_mult_f32(state->input_signal, hanning_window, &state->windowed_signal[AI_FFT_INPUT_PADDING_END_INDEX], AI_FFT_WINDOW_SIZE);
 
    // Compute the FFT of the signal followed by its complex magnitude (optionally squared for power)
-   arm_rfft_fast_f32(&fft, windowed_signal, fft_output, 0);
-   fft_output[AI_FFT_FILTER_SIZE] = fft_output[1];
-   fft_output[1] = 0.0f;
+   arm_rfft_fast_f32(&fft, state->windowed_signal, state->fft_output, 0);
+   state->fft_output[AI_FFT_FILTER_SIZE] = state->fft_output[1];
+   state->fft_output[1] = 0.0f;
 #if AI_USE_POWER_SPECTROGRAM != 0
-   arm_cmplx_mag_squared_f32(fft_output, fft_magnitudes, (AI_FFT_FILTER_SIZE / 2) + 1);
+   arm_cmplx_mag_squared_f32(state->fft_output, state->fft_magnitudes, (AI_FFT_FILTER_SIZE / 2) + 1);
 #else
-   arm_cmplx_mag_f32(fft_output, fft_magnitudes, (AI_FFT_FILTER_SIZE / 2) + 1);
+   arm_cmplx_mag_f32(state->fft_output, state->fft_magnitudes, (AI_FFT_FILTER_SIZE / 2) + 1);
 #endif  // #if AI_USE_POWER_SPECTROGRAM != 0
 
    // Apply a Mel filter to the magnitude/power spectrum
    const float *weights = mel.filter_weights;
    for (uint32_t bin = 0; bin < AI_SPECTROGRAM_NUM_MELS; ++bin)
    {
-      arm_dot_prod_f32(&fft_magnitudes[mel.filter_start_index[bin]], weights, mel.filter_length[bin], &feature_column[bin]);
+      arm_dot_prod_f32(&state->fft_magnitudes[mel.filter_start_index[bin]], weights, mel.filter_length[bin], &feature_column[bin]);
       weights += mel.filter_length[bin];
    }
 
@@ -180,7 +185,11 @@ static void compute_feature_column(const int16_t *audio_data, float *feature_col
 
 // Public API Functions ------------------------------------------------------------------------------------------------
 
-void ai_init(void)
+ai_state_t* ai_create(void) { return &ai_inference_state; }
+
+void ai_free(ai_state_t* state) {}
+
+void ai_init(ai_state_t* state)
 {
    // Enable the NPU clock and reset the NPU peripheral
    WRITE_REG(RCC->AHB5ENSR, RCC_AHB5ENR_NPUEN);
@@ -243,10 +252,8 @@ void ai_init(void)
    // Retrieve pointers to the AI input and output buffers
    const LL_Buffer_InfoTypeDef* input_buffers = LL_ATON_Input_Buffers_Info(&NN_Instance_civicalert);
    const LL_Buffer_InfoTypeDef* output_buffers = LL_ATON_Output_Buffers_Info(&NN_Instance_civicalert);
-   data_in = (float*)LL_Buffer_addr_start(&input_buffers[0]);
-   data_in_len = LL_Buffer_len(&input_buffers[0]);
-   data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);
-   data_out_len = LL_Buffer_len(&output_buffers[0]);
+   state->data_in = (float*)LL_Buffer_addr_start(&input_buffers[0]);
+   state->data_out = (float*)LL_Buffer_addr_start(&output_buffers[0]);
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
@@ -257,12 +264,76 @@ void ai_init(void)
    WRITE_REG(RCC->MEMENCR, (RCC_MEMENR_CACHEAXIRAMEN | RCC_MEMENR_AXISRAM3EN | RCC_MEMENR_AXISRAM4EN | RCC_MEMENR_AXISRAM5EN | RCC_MEMENR_AXISRAM6EN));
 }
 
-float ai_process(volatile audio_packet_t *packet)
+void ai_build_spectrogram(ai_state_t *state, const int16_t* audio_packet)
 {
-   // Set up all necessary AI processing buffers
-   static int16_t pending_audio_data[AI_FFT_WINDOW_SIZE];
-   static float spectrogram_buffer[AI_NUM_PACKETS_FOR_INPUT * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS];
+   // Fill in previously missing AI features using the incoming data
+   for (uint32_t audio_idx = 0, time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
+   {
+      const uint32_t copy_offset = audio_idx ? (AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE) : (AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
+      const uint32_t copy_size = audio_idx ? AI_FFT_STEP_SIZE : (AI_FFT_WINDOW_SIZE + (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE) - AUDIO_PACKET_NUM_SAMPLES);
+      arm_copy_q15(&audio_packet[audio_idx], &state->pending_audio_data[copy_offset], copy_size);
+      compute_feature_column(state, state->pending_audio_data, &state->spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS]);
+      memmove(&state->pending_audio_data[0], &state->pending_audio_data[AI_FFT_STEP_SIZE], sizeof(int16_t) * (AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE));
+   }
 
+   // Shift previous spectrogram windows to make room for the next batch
+   memmove(&state->spectrogram_buffer[0], &state->spectrogram_buffer[AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS], sizeof(float) * ((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS));
+
+   // Compute new AI features from the incoming data
+   for (uint32_t audio_idx = 0, time_step = 0; time_step < AI_AVAILABLE_WINDOWS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
+      compute_feature_column(state, &audio_packet[audio_idx], &state->spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS]);
+
+   // Copy final spectrogram window into missing slots so there are no discontinuities in the last few ms of AI network input
+   for (uint32_t time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; ++time_step)
+      memmove(&state->spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS],
+              &state->spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + AI_AVAILABLE_WINDOWS_PER_PACKET - 1) * AI_SPECTROGRAM_NUM_MELS],
+              sizeof(float) * AI_SPECTROGRAM_NUM_MELS);
+
+   // Store any pending audio data for the next packet
+   arm_copy_q15(&audio_packet[AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE], state->pending_audio_data, AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
+
+   // Apply input normalization/scaling
+#if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX   // Normalize the spectrogram using Abs-Max scaling
+   float abs_max_value;
+   arm_absmax_no_idx_f32(state->spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &abs_max_value);
+   if (abs_max_value > 0.0f)
+      arm_scale_f32(state->spectrogram_buffer, 1.0f / abs_max_value, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+   else
+      arm_copy_f32(state->spectrogram_buffer, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+#elif (AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX || AI_INPUT_SCALING_TYPE == SCALING_TYPE_CUSTOM_RANGE)   // Normalize the spectrogram using Min-Max or custom scaling
+ #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX
+   float min_value, max_value;
+   arm_max_no_idx_f32(state->spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &max_value);
+   arm_min_no_idx_f32(state->spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &min_value);
+ #else
+   const float min_value = CUSTOM_SCALING_MIN_VALUE;
+   const float max_value = CUSTOM_SCALING_MAX_VALUE;
+ #endif
+   if (min_value != max_value)
+   {
+      const float scaler = 2.0f / (max_value - min_value);
+      const float offset = -1.0f - (scaler * min_value);
+      arm_scale_f32(state->spectrogram_buffer, scaler, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+      arm_offset_f32(state->data_in, offset, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+   }
+   else
+      arm_copy_f32(state->spectrogram_buffer, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+#elif AI_INPUT_SCALING_TYPE == SCALING_TYPE_Z_SCORE   // Normalize the spectrogram using Z-Score scaling
+   float mean_value, std_dev;
+   arm_mean_f32(state->spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &mean_value);
+   arm_std_f32(state->spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &std_dev);
+   if (std_dev > 0.0f)
+   {
+      arm_offset_f32(state->spectrogram_buffer, -mean_value, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+      arm_scale_f32(state->data_in, 1.0f / std_dev, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+   }
+   else
+      arm_copy_f32(state->spectrogram_buffer, state->data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
+#endif  // #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX
+}
+
+float ai_process(ai_state_t *state, volatile audio_packet_t *packet)
+{
    // Enable the NPU, its cache, and necessary AXISRAM banks
    WRITE_REG(RCC->AHB5ENSR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
    (void)READ_BIT(RCC->AHB5ENR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
@@ -273,70 +344,8 @@ float ai_process(volatile audio_packet_t *packet)
    CLEAR_BIT(RAMCFG_SRAM5_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
    CLEAR_BIT(RAMCFG_SRAM6_AXI->CR, RAMCFG_AXISRAM_POWERDOWN);
 
-   // Fill in previously missing AI features using the incoming data
-   for (uint32_t audio_idx = 0, time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
-   {
-      const uint32_t copy_offset = audio_idx ? (AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE) : (AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
-      const uint32_t copy_size = audio_idx ? AI_FFT_STEP_SIZE : (AI_FFT_WINDOW_SIZE + (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE) - AUDIO_PACKET_NUM_SAMPLES);
-      arm_copy_q15((int16_t*)&packet->audio[audio_idx], &pending_audio_data[copy_offset], copy_size);
-      compute_feature_column(pending_audio_data, &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS]);
-      memmove(&pending_audio_data[0], &pending_audio_data[AI_FFT_STEP_SIZE], sizeof(int16_t) * (AI_FFT_WINDOW_SIZE - AI_FFT_STEP_SIZE));
-   }
-
-   // Shift previous spectrogram windows to make room for the next batch
-   memmove(&spectrogram_buffer[0], &spectrogram_buffer[AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS], sizeof(float) * ((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET * AI_SPECTROGRAM_NUM_MELS));
-
-   // Compute new AI features from the incoming data
-   for (uint32_t audio_idx = 0, time_step = 0; time_step < AI_AVAILABLE_WINDOWS_PER_PACKET; audio_idx += AI_FFT_STEP_SIZE, ++time_step)
-      compute_feature_column((int16_t*)&packet->audio[audio_idx], &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS]);
-
-   // Copy final spectrogram window into missing slots so there are no discontinuities in the last few ms of AI network input
-   for (uint32_t time_step = AI_AVAILABLE_WINDOWS_PER_PACKET; time_step < AI_NUM_TIME_STEPS_PER_PACKET; ++time_step)
-      memmove(&spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + time_step) * AI_SPECTROGRAM_NUM_MELS],
-              &spectrogram_buffer[(((AI_NUM_PACKETS_FOR_INPUT - 1) * AI_NUM_TIME_STEPS_PER_PACKET) + AI_AVAILABLE_WINDOWS_PER_PACKET - 1) * AI_SPECTROGRAM_NUM_MELS],
-              sizeof(float) * AI_SPECTROGRAM_NUM_MELS);
-
-   // Store any pending audio data for the next packet
-   arm_copy_q15((int16_t*)&packet->audio[AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE], pending_audio_data, AUDIO_PACKET_NUM_SAMPLES - (AI_AVAILABLE_WINDOWS_PER_PACKET * AI_FFT_STEP_SIZE));
-
-   // Apply input normalization/scaling
-#if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX   // Normalize the spectrogram using Abs-Max scaling
-   float abs_max_value;
-   arm_absmax_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &abs_max_value);
-   if (abs_max_value > 0.0f)
-      arm_scale_f32(spectrogram_buffer, 1.0f / abs_max_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-   else
-      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-#elif (AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX || AI_INPUT_SCALING_TYPE == SCALING_TYPE_CUSTOM_RANGE)   // Normalize the spectrogram using Min-Max or custom scaling
- #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_MIN_MAX
-   float min_value, max_value;
-   arm_max_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &max_value);
-   arm_min_no_idx_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &min_value);
- #else
-   const float min_value = CUSTOM_SCALING_MIN_VALUE;
-   const float max_value = CUSTOM_SCALING_MAX_VALUE;
- #endif
-   if (min_value != max_value)
-   {
-      const float scaler = 2.0f / (max_value - min_value);
-      const float offset = -1.0f - (scaler * min_value);
-      arm_scale_f32(spectrogram_buffer, scaler, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-      arm_offset_f32(data_in, offset, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-   }
-   else
-      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-#elif AI_INPUT_SCALING_TYPE == SCALING_TYPE_Z_SCORE   // Normalize the spectrogram using Z-Score scaling
-   float mean_value, std_dev;
-   arm_mean_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &mean_value);
-   arm_std_f32(spectrogram_buffer, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS, &std_dev);
-   if (std_dev > 0.0f)
-   {
-      arm_offset_f32(spectrogram_buffer, -mean_value, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-      arm_scale_f32(data_in, 1.0f / std_dev, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-   }
-   else
-      arm_copy_f32(spectrogram_buffer, data_in, AI_INPUT_NUM_COLUMNS * AI_INPUT_NUM_ROWS);
-#endif  // #if AI_INPUT_SCALING_TYPE == SCALING_TYPE_ABS_MAX
+   // Build the input spectrogram
+   ai_build_spectrogram(state, (const int16_t*)packet->audio);
 
    // Reset the AI runtime and run the inference loop
    LL_ATON_RT_Reset_Network(&NN_Instance_civicalert);
@@ -349,7 +358,7 @@ float ai_process(volatile audio_packet_t *packet)
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
 
    // Process the classification output
-   const float output = data_out[AI_GUNSHOT_CLASS_INDEX];
+   const float output = state->data_out[AI_GUNSHOT_CLASS_INDEX];
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));

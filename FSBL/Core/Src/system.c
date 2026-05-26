@@ -93,6 +93,7 @@ void Error_Handler(void) { __disable_irq(); system_reset(); }
 
 extern void *g_pfnVectors;
 uint32_t SystemCoreClock;
+ai_state_t *ai_state;
 
 void SystemInit(void)
 {
@@ -632,6 +633,9 @@ void system_init(void)
    // Deactivate the SYSCFG clock
    (void)READ_REG(SYSCFG->INITSVTORCR);
    WRITE_REG(RCC->APB4ENCR2, RCC_APB4ENCR2_SYSCFGENC);
+
+   // Store a reference to the AI state
+   ai_state = ai_create();
 }
 
 void system_reset(void)

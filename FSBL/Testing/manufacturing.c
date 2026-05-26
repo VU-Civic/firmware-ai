@@ -12,7 +12,7 @@ int main(void)
    system_init();
    flash_init();
    storage_init();
-   ai_init();
+   ai_init(ai_state);
    comms_init();
 
    // Finalize the system configuration

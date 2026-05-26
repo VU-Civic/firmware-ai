@@ -24,7 +24,7 @@ int main(void)
    // Initialize the system and peripherals
    system_init();
    flash_init();
-   ai_init();
+   ai_init(ai_state);
 
    // Loop forever, classifying the same clip of audio containing a known gunshot
    volatile audio_packet_t pack;
@@ -37,7 +37,7 @@ int main(void)
          // Attempt to classify the audio
          memcpy(pack.audio, &test_audio[i-AUDIO_PACKET_TOTAL_SAMPLES], AUDIO_PACKET_TOTAL_SAMPLES * sizeof(int16_t));
          const uint32_t start_time = DWT->CYCCNT;
-         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(&pack);
+         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(ai_state, &pack);
 
          // Log how long the AI inference process took
          execution_times[exec_count] = (uint32_t)((uint64_t)(DWT->CYCCNT - start_time) * 1000 / SystemCoreClock);

@@ -10,7 +10,7 @@ int main(void)
    system_init();
    flash_init();
    storage_init();
-   ai_init();
+   ai_init(ai_state);
    comms_init(0);
 
    // Finalize the system configuration
@@ -59,7 +59,7 @@ int main(void)
          last_reception_time = DWT->CYCCNT;
 
          // Attempt to classify the audio and transmit the results back to the host
-         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(audio_data);
+         ai_results.class_outputs[AI_GUNSHOT_CLASS_INDEX] = ai_process(ai_state, audio_data);
          comms_transmit((uint8_t*)&ai_results, sizeof(ai_results));
 
          // Start a new SD card audio file if the gunshot probability was above the storage threshold

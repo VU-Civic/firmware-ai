@@ -90,8 +90,12 @@ typedef struct __attribute__ ((__packed__))
    float class_outputs[AI_NUM_CLASSES];
 } ai_data_t;
 
+typedef struct ai_state_t ai_state_t;
+
 
 // Global Function Prototypes ------------------------------------------------------------------------------------------
+
+extern ai_state_t *ai_state;
 
 void sd_card_detection_isr(uint8_t sd_card_detected);
 void comms_spi_cs_isr(void);
