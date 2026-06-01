@@ -21,8 +21,11 @@
 #define FLAC_ENCODER_PARTITION_ORDER          3
 #define FLAC_ENCODER_BLOCK_SIZE               4096
 
-#define AUDIO_CLIP_HISTORY_NUM_SAMPLES        (STORAGE_AUDIO_CLIP_HISTORY_SECONDS * AUDIO_PACKET_SAMPLE_RATE)
+#define AUDIO_CLIP_HISTORY_NUM_SAMPLES        (STORAGE_AUDIO_CLIP_HISTORY_MS * (AUDIO_PACKET_SAMPLE_RATE / 1000))
 #define SD_CARD_BUFFER_NUM_BYTES              16384
+
+#define FLAC_HISTORY_NUM_FRAMES               ((AUDIO_CLIP_HISTORY_NUM_SAMPLES + FLAC_ENCODER_BLOCK_SIZE - 1) / FLAC_ENCODER_BLOCK_SIZE)
+#define FLAC_HISTORY_FRAME_SIZE               (27 + ((FLAC_ENCODER_BLOCK_SIZE * AUDIO_BITS_PER_SAMPLE + 7) / 8))
 
 #define SDMMC_CLK                             200000000U
 #ifdef SD_LOW_VOLTAGE_SIGNALING
@@ -68,6 +71,8 @@ static double next_timestamp;
 #ifdef USE_FLAC_ENCODER
 
 static uint32_t pcm_write_index, bytes_written, sd_write_index;
+static uint16_t flac_history_sizes[FLAC_HISTORY_NUM_FRAMES];
+static uint8_t flac_history_head, flac_history_count;
 static int8_t output_buffer[8219];
 static tflac flac_encoder;
 
@@ -94,8 +99,7 @@ __attribute__ ((section(".noncacheable")))
 static int16_t* pcm_channels[AUDIO_NUM_ENCODED_CHANNELS];
 
 __attribute__ ((section(".nonessential")))
-static int16_t pcm_history[AUDIO_CLIP_HISTORY_NUM_SAMPLES];
-static uint32_t pcm_history_index;
+static int8_t flac_history_frames[FLAC_HISTORY_NUM_FRAMES][FLAC_HISTORY_FRAME_SIZE];
 
 #endif  // #ifdef USE_FLAC_ENCODER
 
@@ -554,6 +558,29 @@ static void sd_card_write_bytes(const int8_t *data, uint32_t data_len)
    }
 }
 
+static void sd_card_write_history_frames(void)
+{
+   // Iterate over all pre-encoded FLAC history frames
+   for (uint8_t i = 0; i < flac_history_count; ++i)
+   {
+      // Determine the circular buffer slot for this frame (oldest first)
+      const uint8_t slot = (uint8_t)((flac_history_head + FLAC_HISTORY_NUM_FRAMES - flac_history_count + i) % FLAC_HISTORY_NUM_FRAMES);
+      uint8_t *frame = (uint8_t*)flac_history_frames[slot];
+      const uint16_t frame_size = flac_history_sizes[slot];
+
+      // Patch the frame number at byte offset 4 (always 1-byte UTF-8 for frames 0-11), recalculate CRC-8 over header bytes 0-4,
+      // and recalculate CRC-16 over the entire frame
+      frame[4] = i;
+      frame[5] = tflac_crc8(frame, 5, 0);
+      const uint16_t crc16 = tflac_crc16(frame, frame_size - 2, 0);
+      frame[frame_size - 2] = (uint8_t)(crc16 >> 8);
+      frame[frame_size - 1] = (uint8_t)(crc16 & 0xFF);
+
+      // Write the patched frame to the SD card
+      sd_card_write_bytes((int8_t*)frame, frame_size);
+   }
+}
+
 static void sd_card_close_audio_file(void)
 {
    // Finalize and close the currently open audio file
@@ -575,9 +602,10 @@ static void sd_card_close_audio_file(void)
       f_lseek(&audio_file, 4);
       f_write(&audio_file, output_buffer, bytes_written, &data_written);
 
-      // Close the audio file
+      // Close the audio file and reset the encoding history
       for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
+      flac_history_head = flac_history_count = 0;
    }
 }
 
@@ -600,29 +628,37 @@ static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t
    snprintf(file_name, sizeof(file_name), "%s/%s.flac", audio_directory, time_string);
    audio_file_open = (f_open(&audio_file, file_name, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK);
 
-   // Initialize a new FLAC encoder
+   // Initialize a new FLAC encoder and write the file header
    if (audio_file_open)
    {
-      // Reset the FLAC encoder
-      min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
-      sd_write_index = pcm_write_index = samples_written = 0;
+      // Reset the write state, but do not reset pcm_write_index so that any partial block carries forward into live encoding
+      sd_write_index = 0;
       flac_encoder.samplecount = TFLAC_U64_ZERO;
       flac_encoder.frameno = flac_encoder.verbatim_subframe_bits = 0;
       flac_encoder.wasted_bits = flac_encoder.subframe_bitdepth = 0;
+      min_clip_samples = (uint32_t)clip_length_seconds * AUDIO_PACKET_SAMPLE_RATE;
 
-      // Write a FLAC header and STREAMINFO structure
+      // Write FLAC magic and a STREAMINFO placeholder to be overwritten at file close
       sd_card_write_bytes((int8_t*)"fLaC", 4);
       tflac_encode_streaminfo(&flac_encoder, 1, output_buffer, output_buffer_len, &bytes_written);
       sd_card_write_bytes(output_buffer, bytes_written);
+
+      // Write pre-encoded history frames with corrected frame numbers and CRCs
+      sd_card_write_history_frames();
+
+      // Advance the encoder state past the history frames so that live frames are numbered correctly
+      flac_encoder.frameno = flac_history_count;
+      flac_encoder.samplecount = (tflac_u64)flac_history_count * FLAC_ENCODER_BLOCK_SIZE;
+      samples_written = (uint32_t)flac_history_count * FLAC_ENCODER_BLOCK_SIZE;
    }
    return 1;
 }
 
 static void sd_card_write_audio_file(int16_t *audio_data)
 {
-   // Only proceed while there is an open file and outstanding audio samples
+   // Always process all incoming samples and accumulate into a PCM block buffer
    uint32_t samples_remaining = AUDIO_PACKET_NUM_SAMPLES, read_index = 0;
-   while (sd_card_initialized && audio_file_open && !sd_card_recovery_pending && samples_remaining)
+   while (samples_remaining)
    {
       // Cast the audio data into the type expected by the FLAC encoder
       const uint32_t samples_to_copy = ((FLAC_ENCODER_BLOCK_SIZE <= samples_remaining) ? FLAC_ENCODER_BLOCK_SIZE : samples_remaining) - pcm_write_index;
@@ -630,19 +666,31 @@ static void sd_card_write_audio_file(int16_t *audio_data)
          arm_copy_q15(audio_data + (ch * AUDIO_PACKET_NUM_SAMPLES) + read_index, pcm_channels[ch] + pcm_write_index, samples_to_copy);
       pcm_write_index = (pcm_write_index + samples_to_copy) % FLAC_ENCODER_BLOCK_SIZE;
       samples_remaining -= samples_to_copy;
-      samples_written += samples_to_copy;
       read_index += samples_to_copy;
 
-      // Check if the PCM buffer has been completely filled
+      // When a full block is ready, encode it and attempt to write to the SD card
       if (!pcm_write_index)
       {
-         // Format the raw audio data as FLAC
-         tflac_encode_s16p(&flac_encoder, FLAC_ENCODER_BLOCK_SIZE, pcm_channels, output_buffer, output_buffer_len, &bytes_written);
-         sd_card_write_bytes(output_buffer, bytes_written);
-
-         // Determine whether the full audio clip has been written
-         if (samples_written >= min_clip_samples)
-            sd_card_close_audio_file();
+         if (audio_file_open && sd_card_initialized && !sd_card_recovery_pending)
+         {
+            // If a FLAC file is already open, encode with the running sequential frame number and write to the SD card
+            tflac_encode_s16p(&flac_encoder, FLAC_ENCODER_BLOCK_SIZE, pcm_channels, output_buffer, output_buffer_len, &bytes_written);
+            sd_card_write_bytes(output_buffer, bytes_written);
+            samples_written += FLAC_ENCODER_BLOCK_SIZE;
+            if (samples_written >= min_clip_samples)
+               sd_card_close_audio_file();
+         }
+         else if (!audio_file_open && output_buffer_len)
+         {
+            // Pre-encode as a historical frame with frameno=0, to be patched to the real value at write time
+            flac_encoder.frameno = 0;
+            flac_encoder.samplecount = TFLAC_U64_ZERO;
+            tflac_encode_s16p(&flac_encoder, FLAC_ENCODER_BLOCK_SIZE, pcm_channels, flac_history_frames[flac_history_head], FLAC_HISTORY_FRAME_SIZE, &bytes_written);
+            flac_history_sizes[flac_history_head] = (uint16_t)bytes_written;
+            flac_history_head = (uint8_t)((flac_history_head + 1) % FLAC_HISTORY_NUM_FRAMES);
+            if (flac_history_count < FLAC_HISTORY_NUM_FRAMES)
+               flac_history_count++;
+         }
       }
    }
 }
@@ -1005,6 +1053,7 @@ void storage_init(void)
    output_buffer_len = samples_written = audio_file_open = 0;
    timeout_num_cycles = ((SystemCoreClock + AUDIO_PACKET_SAMPLE_RATE) / AUDIO_PACKET_SAMPLE_RATE) * AUDIO_PACKET_NUM_SAMPLES * 2;
 #ifdef USE_FLAC_ENCODER
+   flac_history_head = flac_history_count = 0;
    for (uint32_t ch = 0; ch < AUDIO_NUM_ENCODED_CHANNELS; ++ch)
       pcm_channels[ch] = pcm[ch];
 #endif
@@ -1084,7 +1133,6 @@ void storage_init(void)
    flac_encoder.enable_md5 = 0;
    if (!tflac_validate(&flac_encoder, flac_encoder_mem, tflac_size_memory(FLAC_ENCODER_BLOCK_SIZE)))
       output_buffer_len = tflac_size_frame(FLAC_ENCODER_BLOCK_SIZE, AUDIO_NUM_ENCODED_CHANNELS, AUDIO_BITS_PER_SAMPLE);
-   pcm_history_index = 0;
 
 #endif  // #ifdef USE_FLAC_ENCODER
 
@@ -1143,17 +1191,9 @@ void storage_handle_sd_card_state_change(void)
 
 void storage_open_audio_file(volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
-   // Open a new file on the SD card
-   if (!sd_card_recovery_pending && sd_card_open_file(next_timestamp, audio_data, ai_results, clip_length_seconds))
-   {
-      // Write stored historical audio to the file
-#ifdef USE_FLAC_ENCODER
-      for (uint32_t i = pcm_history_index; i < AUDIO_CLIP_HISTORY_NUM_SAMPLES; i += AUDIO_PACKET_NUM_SAMPLES)
-         sd_card_write_audio_file(&pcm_history[i]);
-      for (uint32_t i = 0; i < pcm_history_index; i += AUDIO_PACKET_NUM_SAMPLES)
-         sd_card_write_audio_file(&pcm_history[i]);
-#endif
-   }
+   // Open a new file on the SD card and automatically write any pre-encoded audio frames
+   if (!sd_card_recovery_pending)
+      sd_card_open_file(next_timestamp, audio_data, ai_results, clip_length_seconds);
 }
 
 void storage_write_audio_file(volatile audio_packet_t *audio_data)
@@ -1165,11 +1205,7 @@ void storage_write_audio_file(volatile audio_packet_t *audio_data)
    else
       next_timestamp = audio_timestamp + (1.0 / (AUDIO_PACKET_SAMPLE_RATE / AUDIO_PACKET_NUM_SAMPLES));
 
-   // Update the historical PCM data and write the audio to a currently open file
-#ifdef USE_FLAC_ENCODER
-   arm_copy_q15((int16_t*)audio_data->audio, &pcm_history[pcm_history_index], AUDIO_PACKET_NUM_SAMPLES);
-   pcm_history_index = (pcm_history_index + AUDIO_PACKET_NUM_SAMPLES) % AUDIO_CLIP_HISTORY_NUM_SAMPLES;
-#endif
+   // Pre-encode audio if no file is open or write directly to the SD card otherwise
    sd_card_write_audio_file((int16_t*)audio_data->audio);
 }
 
