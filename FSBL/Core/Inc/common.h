@@ -40,7 +40,7 @@
 #define CELL_IMEI_LENGTH                              15
 #define CELL_IMSI_LENGTH                              15
 
-#define STORAGE_AUDIO_CLIP_HISTORY_SECONDS            1
+#define STORAGE_AUDIO_CLIP_HISTORY_MS                 1500
 
 #define USE_SETJMP_FOR_SD_STORAGE                     0
 
