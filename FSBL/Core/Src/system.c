@@ -93,7 +93,6 @@ void Error_Handler(void) { __disable_irq(); system_reset(); }
 
 extern void *g_pfnVectors;
 uint32_t SystemCoreClock;
-ai_state_t *ai_state;
 
 void SystemInit(void)
 {
@@ -633,9 +632,6 @@ void system_init(void)
    // Deactivate the SYSCFG clock
    (void)READ_REG(SYSCFG->INITSVTORCR);
    WRITE_REG(RCC->APB4ENCR2, RCC_APB4ENCR2_SYSCFGENC);
-
-   // Store a reference to the AI state
-   ai_state = ai_create();
 }
 
 void system_reset(void)
@@ -880,4 +876,13 @@ void system_clean_dcache_region(const void *addr, uint32_t len)
    const uintptr_t aligned_start = start & ~(line_size - 1U);
    const uintptr_t aligned_end = (start + len + line_size - 1U) & ~(line_size - 1U);
    SCB_CleanDCache_by_Addr((uint32_t*)aligned_start, (int32_t)(aligned_end - aligned_start));
+}
+
+void system_invalidate_dcache_region(const void *addr, uint32_t len)
+{
+   const uintptr_t line_size = (uintptr_t)__SCB_DCACHE_LINE_SIZE;
+   const uintptr_t start = (uintptr_t)addr;
+   const uintptr_t aligned_start = start & ~(line_size - 1U);
+   const uintptr_t aligned_end = (start + len + line_size - 1U) & ~(line_size - 1U);
+   SCB_InvalidateDCache_by_Addr((uint32_t*)aligned_start, (int32_t)(aligned_end - aligned_start));
 }

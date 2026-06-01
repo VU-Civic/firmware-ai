@@ -75,11 +75,9 @@ typedef struct __attribute__ ((__packed__, aligned(4)))
    int32_t q1, q2, q3;
    char imei[CELL_IMEI_LENGTH+1], imsi[CELL_IMSI_LENGTH+1];
    ai_config_t ai_config;
-   uint8_t channel_alarms;
-   uint8_t onset_detected;
+   uint8_t channel_alarms, onset_detected;
    double onset_timestamp;
-   float onset_magnitude;
-   float angle_of_arrival[3];
+   float onset_magnitude, angle_of_arrival[3];
    uint8_t reserved[9];
    uint8_t end_delimiter[4];
 } audio_packet_t;
@@ -90,12 +88,8 @@ typedef struct __attribute__ ((__packed__))
    float class_outputs[AI_NUM_CLASSES];
 } ai_data_t;
 
-typedef struct ai_state_t ai_state_t;
-
 
 // Global Function Prototypes ------------------------------------------------------------------------------------------
-
-extern ai_state_t *ai_state;
 
 void sd_card_detection_isr(uint8_t sd_card_detected);
 void comms_spi_cs_isr(void);

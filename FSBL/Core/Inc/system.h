@@ -12,5 +12,6 @@ void system_delay(uint32_t ms);
 uint32_t system_get_tick(void);
 void system_set_risaf_default(RISAF_TypeDef *risaf);
 void system_clean_dcache_region(const void *addr, uint32_t len);
+void system_invalidate_dcache_region(const void *addr, uint32_t len);
 
 #endif  // #ifndef __SYSTEM_HEADER_H__
