@@ -13,7 +13,7 @@ MEMORY
 {
   ROM (xrw)    : ORIGIN = 0x34180400,   LENGTH = 511K
   RAM (xrw)    : ORIGIN = 0x34100000,   LENGTH = 512K
-  FLEXRAM (rw) : ORIGIN = 0x34000000,   LENGTH = 100K
+  FLEXRAM (rw) : ORIGIN = 0x34000000,   LENGTH = 200K
 }
 
 /* Sections */
