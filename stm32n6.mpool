@@ -22,8 +22,8 @@
         "fformat": "FORMAT_RAW",
         "mode": "USEMODE_ABSOLUTE",
         "prop":   { "rights": "ACC_WRITE", "throughput": "MID",  "latency": "MID", "byteWidth": 8, "freqRatio": 2.50, "read_power": 9.381,  "write_power": 8.569 },
-        "offset": { "value": "0x34000000", "magnitude":  "BYTES" },
-        "size":   { "value": "0",          "magnitude": "KBYTES" }
+        "offset": { "value": "0x34019000", "magnitude":  "BYTES" },
+        "size":   { "value": "300",        "magnitude": "KBYTES" }
       },
       {
         "fname": "AXISRAM1",
