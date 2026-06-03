@@ -350,8 +350,8 @@ float ai_process(volatile audio_packet_t *packet)
          LL_ATON_OSAL_WFE();
    } while (ll_aton_rt_ret != LL_ATON_RT_DONE);
 
-   // Process the classification output
-   const float output = data_out[AI_GUNSHOT_CLASS_INDEX];
+   // Apply a hard sigmoid function to the classification output
+   const float output = fmaxf(0.0f, fminf(1.0f, ((2.0f * data_out[AI_GUNSHOT_CLASS_INDEX]) + 5.0f) * 0.1f));
 
    // Disable the NPU, its cache, and unused AXISRAM banks
    WRITE_REG(RCC->AHB5ENCR, (RCC_AHB5ENR_NPUEN | RCC_AHB5ENR_CACHEAXIEN | RCC_AHB5ENR_XSPI2EN));
