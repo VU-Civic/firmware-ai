@@ -64,7 +64,7 @@ static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_sta
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
 static uint32_t sd_recovery_last_attempt_tick;
 static char time_string[10], audio_directory[14], file_name[32];
-static uint8_t work_buf[FF_MAX_SS], extended_timeout;
+static uint8_t sd_card_full, work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
 static double next_timestamp;
 
@@ -536,11 +536,10 @@ static void sd_card_store_audio_metadata(double audio_timestamp, volatile audio_
 static void sd_card_write_bytes(const int8_t *data, uint32_t data_len)
 {
    // Iterate as long as bytes remain to be copied to the write buffer
-   UINT data_written;
    uint32_t data_offset = 0;
    uint32_t buffer_bytes_remaining = SD_CARD_BUFFER_NUM_BYTES - (sd_write_index % SD_CARD_BUFFER_NUM_BYTES);
    uint32_t bytes_to_copy = (data_len <= buffer_bytes_remaining) ? data_len : buffer_bytes_remaining;
-   while (bytes_to_copy)
+   while (!sd_card_full && bytes_to_copy)
    {
       // Copy the requested number of bytes into the write buffer
       arm_copy_q7(data + data_offset, &sd_write_buffer[sd_write_index], bytes_to_copy);
@@ -550,7 +549,15 @@ static void sd_card_write_bytes(const int8_t *data, uint32_t data_len)
       // Check if the write buffer is full and should be flushed to the card
       sd_write_index = (sd_write_index + bytes_to_copy) % sizeof(sd_write_buffer);
       if (audio_file_open && ((sd_write_index == 0) || (sd_write_index == SD_CARD_BUFFER_NUM_BYTES)))
-         f_write(&audio_file, &sd_write_buffer[sd_write_index ? 0 : SD_CARD_BUFFER_NUM_BYTES], SD_CARD_BUFFER_NUM_BYTES, &data_written);
+      {
+         UINT data_written = 0;
+         const FRESULT write_result = f_write(&audio_file, &sd_write_buffer[sd_write_index ? 0 : SD_CARD_BUFFER_NUM_BYTES], SD_CARD_BUFFER_NUM_BYTES, &data_written);
+         if (data_written != SD_CARD_BUFFER_NUM_BYTES)
+         {
+            sd_card_full = (write_result == FR_OK);
+            return;
+         }
+      }
 
       // Recalculate the number of bytes remaining to be copied
       buffer_bytes_remaining = SD_CARD_BUFFER_NUM_BYTES - (sd_write_index % SD_CARD_BUFFER_NUM_BYTES);
@@ -586,25 +593,30 @@ static void sd_card_close_audio_file(void)
    // Finalize and close the currently open audio file
    if (audio_file_open)
    {
-      // Encode any remaining data as FLAC
-      UINT data_written;
-      if (pcm_write_index)
+      // Ensure that the SD card is not full
+      if (!sd_card_full)
       {
-         tflac_encode_s16p(&flac_encoder, pcm_write_index, pcm_channels, output_buffer, output_buffer_len, &bytes_written);
-         sd_card_write_bytes(output_buffer, bytes_written);
-      }
-      if (sd_write_index && (sd_write_index != SD_CARD_BUFFER_NUM_BYTES))
-         f_write(&audio_file, &sd_write_buffer[(sd_write_index < SD_CARD_BUFFER_NUM_BYTES) ? 0 : SD_CARD_BUFFER_NUM_BYTES], sd_write_index % SD_CARD_BUFFER_NUM_BYTES, &data_written);
+         // Encode any remaining data as FLAC
+         UINT data_written;
+         if (pcm_write_index)
+         {
+            tflac_encode_s16p(&flac_encoder, pcm_write_index, pcm_channels, output_buffer, output_buffer_len, &bytes_written);
+            sd_card_write_bytes(output_buffer, bytes_written);
+         }
+         if (sd_write_index && (sd_write_index != SD_CARD_BUFFER_NUM_BYTES))
+            f_write(&audio_file, &sd_write_buffer[(sd_write_index < SD_CARD_BUFFER_NUM_BYTES) ? 0 : SD_CARD_BUFFER_NUM_BYTES], sd_write_index % SD_CARD_BUFFER_NUM_BYTES, &data_written);
 
-      // Finalize the FLAC stream
-      tflac_finalize(&flac_encoder);
-      tflac_encode_streaminfo(&flac_encoder, 1, output_buffer, output_buffer_len, &bytes_written);
-      f_lseek(&audio_file, 4);
-      f_write(&audio_file, output_buffer, bytes_written, &data_written);
+         // Finalize the FLAC stream
+         tflac_finalize(&flac_encoder);
+         tflac_encode_streaminfo(&flac_encoder, 1, output_buffer, output_buffer_len, &bytes_written);
+         f_lseek(&audio_file, 4);
+         f_write(&audio_file, output_buffer, bytes_written, &data_written);
+      }
 
       // Close the audio file and reset the encoding history
       for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
+      audio_file_open = 0;
       flac_history_head = flac_history_count = 0;
    }
 }
@@ -612,7 +624,7 @@ static void sd_card_close_audio_file(void)
 static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Extend the length of an existing audio file if already open
-   if (!sd_card_initialized || audio_file_open)
+   if (!sd_card_initialized || audio_file_open || sd_card_full)
    {
       samples_written = 0;
       return 0;
@@ -677,7 +689,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
             tflac_encode_s16p(&flac_encoder, FLAC_ENCODER_BLOCK_SIZE, pcm_channels, output_buffer, output_buffer_len, &bytes_written);
             sd_card_write_bytes(output_buffer, bytes_written);
             samples_written += FLAC_ENCODER_BLOCK_SIZE;
-            if (samples_written >= min_clip_samples)
+            if (sd_card_full || (samples_written >= min_clip_samples))
                sd_card_close_audio_file();
          }
          else if (!audio_file_open && output_buffer_len)
@@ -702,22 +714,27 @@ static void sd_card_close_audio_file(void)
    // Finalize and close the currently open audio file
    if (audio_file_open)
    {
+      DWORD field;
       UINT data_written;
-      f_lseek(&audio_file, 4);
-      uint32_t field = 36 + (samples_written * sizeof(int16_t) * AUDIO_PACKET_NUM_CHANNELS);
-      f_write(&audio_file, &field, 4, &data_written);
-      f_lseek(&audio_file, 40);
-      field = samples_written * sizeof(int16_t) * AUDIO_PACKET_NUM_CHANNELS;
-      f_write(&audio_file, &field, 4, &data_written);
+      if (!sd_card_full)
+      {
+         f_lseek(&audio_file, 4);
+         field = 36 + (samples_written * sizeof(int16_t) * AUDIO_PACKET_NUM_CHANNELS);
+         f_write(&audio_file, &field, 4, &data_written);
+         f_lseek(&audio_file, 40);
+         field = samples_written * sizeof(int16_t) * AUDIO_PACKET_NUM_CHANNELS;
+         f_write(&audio_file, &field, 4, &data_written);
+      }
       for (uint32_t retries = 0; audio_file_open && (retries < 12); ++retries)
          audio_file_open = (f_close(&audio_file) != FR_OK);
+      audio_file_open = 0;
    }
 }
 
 static uint8_t sd_card_open_file(double audio_timestamp, volatile audio_packet_t *audio_data, const ai_data_t *ai_results, uint8_t clip_length_seconds)
 {
    // Do not continue if the SD card is not initialized or an audio file is already open
-   if (!sd_card_initialized || audio_file_open)
+   if (!sd_card_initialized || audio_file_open || sd_card_full)
       return 0;
 
    // Determine if time to create a new storage directory
@@ -753,7 +770,7 @@ static void sd_card_write_audio_file(int16_t *audio_data)
 {
    // Only proceed if there is an open audio file
    static int16_t pcm[AUDIO_PACKET_TOTAL_SAMPLES];
-   if (sd_card_initialized && audio_file_open && !sd_card_recovery_pending)
+   if (sd_card_initialized && audio_file_open && !sd_card_recovery_pending && !sd_card_full)
    {
       // Interleave the audio samples
       UINT data_written = 0;
@@ -771,12 +788,18 @@ static void sd_card_write_audio_file(int16_t *audio_data)
       arm_copy_q15(audio_data, pcm, AUDIO_PACKET_NUM_SAMPLES);
 #endif
       system_clean_dcache_region(pcm, sizeof(pcm));
-      if ((f_write(&audio_file, pcm, sizeof(pcm), &data_written) == FR_OK) && (data_written == sizeof(pcm)))
+      const FRESULT write_result = f_write(&audio_file, pcm, sizeof(pcm), &data_written);
+      if ((write_result == FR_OK) && (data_written == sizeof(pcm)))
          system_feed_watchdog();
+      else
+      {
+         sd_card_full = (write_result == FR_OK);
+         system_feed_watchdog();
+      }
 
       // Determine whether a full audio clip has been written
       samples_written += AUDIO_PACKET_NUM_SAMPLES;
-      if (samples_written >= min_clip_samples)
+      if (sd_card_full || samples_written >= min_clip_samples)
          sd_card_close_audio_file();
    }
 }
@@ -1050,7 +1073,7 @@ void storage_init(void)
    sd_card_status = STA_NOINIT;
    sd_card_recovery_pending = 0;
    sd_recovery_last_attempt_tick = DWT->CYCCNT;
-   output_buffer_len = samples_written = audio_file_open = 0;
+   output_buffer_len = samples_written = audio_file_open = sd_card_full = 0;
    timeout_num_cycles = ((SystemCoreClock + AUDIO_PACKET_SAMPLE_RATE) / AUDIO_PACKET_SAMPLE_RATE) * AUDIO_PACKET_NUM_SAMPLES * 2;
 #ifdef USE_FLAC_ENCODER
    flac_history_head = flac_history_count = 0;
@@ -1150,6 +1173,8 @@ void storage_enable(void)
    sd_card_recovery_pending = 0;
    if (!enable_sd_card() || !mount_sd_card_file_system())
       disable_sd_card();
+   else
+      sd_card_full = 0;
    extended_timeout = 0;
 }
 
@@ -1168,7 +1193,10 @@ void storage_handle_sd_card_state_change(void)
       if (READ_BIT(SD_CARD_DETECT_GPIO_Port->IDR, SD_CARD_DETECT_Pin))
       {
          if (enable_sd_card() && mount_sd_card_file_system())
+         {
             sd_card_recovery_pending = 0;
+            sd_card_full = 0;
+         }
          else
             disable_sd_card();
       }
@@ -1184,6 +1212,8 @@ void storage_handle_sd_card_state_change(void)
       extended_timeout = 1;
       if (!(sd_card_state_changed - 1) || !enable_sd_card() || !mount_sd_card_file_system())
          disable_sd_card();
+      else
+         sd_card_full = 0;
       sd_card_recovery_pending = 0;
       extended_timeout = 0;
    }
@@ -1212,7 +1242,7 @@ void storage_write_audio_file(volatile audio_packet_t *audio_data)
 void storage_write_device_metadata_file(const char *fw_revision, volatile audio_packet_t *audio_data)
 {
    // Do not continue if the SD card is not initialized
-   if (!sd_card_initialized || sd_card_recovery_pending)
+   if (!sd_card_initialized || sd_card_recovery_pending || sd_card_full)
       return;
 
    // Write the desired metadata to a new file
