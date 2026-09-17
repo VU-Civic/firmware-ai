@@ -59,12 +59,12 @@ typedef struct __attribute__((__packed__))
 
 static volatile uint8_t audio_file_open;
 static volatile DSTATUS sd_card_status;
-static volatile uint32_t sd_xfer_context, sd_result_ready;
+static volatile uint32_t sd_xfer_context, sd_result_ready, sd_mount_failures, sd_voltage_switch_failures;
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed, sd_card_recovery_pending;
+static uint8_t sd_card_full, work_buf[FF_MAX_SS], extended_timeout, sd_low_voltage_active;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
 static uint32_t sd_recovery_last_attempt_tick;
 static char time_string[10], audio_directory[14], file_name[32];
-static uint8_t sd_card_full, work_buf[FF_MAX_SS], extended_timeout;
 static sd_card_details_t sd_card_details;
 static double next_timestamp;
 
@@ -124,6 +124,7 @@ static void disable_sd_card(void)
    // Clear the SD card initialization flag
    sd_card_state_changed = 0;
    sd_card_initialized = 0;
+   sd_low_voltage_active = 0;
    sd_result_ready = 0;
    audio_file_open = 0;
 }
@@ -210,7 +211,7 @@ static uint8_t enable_sd_card(void)
       for (uint32_t count = 0, valid_voltage = 0; (count <= 1000) && !valid_voltage; ++count)
       {
          SDMMC_CmdAppCommand(SDMMC1, 0);
-         SDMMC_CmdAppOperCommand(SDMMC1, SDMMC_VOLTAGE_WINDOW_SD | SDMMC_HIGH_CAPACITY | SD_SWITCH_1_8V_CAPACITY);
+         SDMMC_CmdAppOperCommand(SDMMC1, SDMMC_VOLTAGE_WINDOW_SD | SDMMC_HIGH_CAPACITY | (voltage_attempt ? 0U : SD_SWITCH_1_8V_CAPACITY));
          const uint32_t response = SDMMC_GetResponse(SDMMC1, SDMMC_RESP1);
          valid_voltage = ((response >> 31U) == 1U);
          sd_card_details.card_type = (valid_voltage && ((response & SDMMC_HIGH_CAPACITY) == SDMMC_HIGH_CAPACITY)) ? CARD_SDHC_SDXC : CARD_SDSC;
@@ -237,7 +238,17 @@ static uint8_t enable_sd_card(void)
          if (!READ_BIT(SDMMC1->STA, (SDMMC_FLAG_CTIMEOUT | SDMMC_FLAG_CCRCFAIL)) && !READ_BIT(SDMMC1->RESP1, SDMMC_OCR_ERRORBITS))
          {
             // Wait until the clock-stopped flag is set and clear it
-            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_CKSTOP));
+            const uint32_t voltage_switch_timeout = SystemCoreClock / 10U;
+            uint32_t voltage_switch_tick = DWT->CYCCNT;
+            uint8_t voltage_switch_timed_out = 0;
+            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_CKSTOP) && !voltage_switch_timed_out)
+               voltage_switch_timed_out = ((DWT->CYCCNT - voltage_switch_tick) >= voltage_switch_timeout);
+            if (voltage_switch_timed_out)
+            {
+               ++sd_voltage_switch_failures;
+               disable_sd_card();
+               continue;
+            }
             WRITE_REG(SDMMC1->ICR, SDMMC_FLAG_CKSTOP);
 
             // Switch the signaling voltage regulator to 1.8V
@@ -245,13 +256,22 @@ static uint8_t enable_sd_card(void)
 
             // Tell the SD card peripheral to begin the voltage switch and wait for it to complete
             SET_BIT(SDMMC1->POWER, SDMMC_POWER_VSWITCH);
-            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_VSWEND));
+            voltage_switch_tick = DWT->CYCCNT;
+            while (!READ_BIT(SDMMC1->STA, SDMMC_FLAG_VSWEND) && !voltage_switch_timed_out)
+               voltage_switch_timed_out = ((DWT->CYCCNT - voltage_switch_tick) >= voltage_switch_timeout);
+            if (voltage_switch_timed_out)
+            {
+               ++sd_voltage_switch_failures;
+               disable_sd_card();
+               continue;
+            }
             SET_BIT(SDMMC1->ICR, SDMMC_FLAG_VSWEND);
 
             // Validate that the switch occurred successfully
             if (READ_BIT(SDMMC1->STA, SDMMC_FLAG_BUSYD0))
             {
                // SD card voltage error
+               ++sd_voltage_switch_failures;
                disable_sd_card();
                continue;
             }
@@ -260,6 +280,7 @@ static uint8_t enable_sd_card(void)
             MODIFY_REG(PWR->SVMCR1, PWR_SVMCR1_VDDIO4VRSEL, PWR_VDDIO_RANGE_1V8 << PWR_SVMCR1_VDDIO4VRSEL_Pos);
             MODIFY_REG(SDMMC1->POWER, (SDMMC_POWER_VSWITCHEN | SDMMC_POWER_VSWITCH), SDMMC_POWER_PWRCTRL);
             WRITE_REG(SDMMC1->ICR, 0xFFFFFFFFU);
+            sd_low_voltage_active = 1;
             voltage_attempt = 2;
          }
       }
@@ -365,13 +386,18 @@ static uint8_t enable_sd_card(void)
       else
          sd_card_details.card_speed = CARD_NORMAL_SPEED;
 
+      // UHS bus modes only exist at 1.8V signalling
+      if (!sd_low_voltage_active && (sd_card_details.card_speed == CARD_ULTRA_HIGH_SPEED))
+         sd_card_details.card_speed = CARD_HIGH_SPEED;
+
       // Reconfigure the card to use a 4-bit wide bus configuration
       SDMMC_CmdAppCommand(SDMMC1, sd_card_details.address);
       SDMMC_CmdBusWidth(SDMMC1, 2U);
       MODIFY_REG(SDMMC1->CLKCR, CLKCR_CLEAR_MASK, (SDMMC_CLOCK_EDGE_RISING | SDMMC_CLOCK_POWER_SAVE_DISABLE | SDMMC_BUS_WIDE_4B | (SDMMC_CLK / (2U * 25000000U))));
 
       // Determine the best SD bus clock configuration values given the current card properties and desired speed
-      uint32_t sd_max_bus_speed_mode = SD_MAX_BUS_SPEED_MODE, sd_clock_div, sd_high_speed = 0, sd_ddr_mode = 0;
+      uint32_t sd_max_bus_speed_mode = sd_low_voltage_active ? SD_MAX_BUS_SPEED_MODE : SDMMC_SDR25_SWITCH_PATTERN;
+      uint32_t sd_clock_div, sd_high_speed = 0, sd_ddr_mode = 0;
       switch (sd_max_bus_speed_mode)
       {
          case SDMMC_SDR25_SWITCH_PATTERN:
@@ -1172,7 +1198,11 @@ void storage_enable(void)
    extended_timeout = 1;
    sd_card_recovery_pending = 0;
    if (!enable_sd_card() || !mount_sd_card_file_system())
+   {
+      ++sd_mount_failures;
       disable_sd_card();
+      sd_card_recovery_pending = READ_BIT(SD_CARD_DETECT_GPIO_Port->IDR, SD_CARD_DETECT_Pin) ? 1 : 0;
+   }
    else
       sd_card_full = 0;
    extended_timeout = 0;
@@ -1210,11 +1240,19 @@ void storage_handle_sd_card_state_change(void)
    {
       // Attempt to initialize or disable the SD card based on its detection status
       extended_timeout = 1;
-      if (!(sd_card_state_changed - 1) || !enable_sd_card() || !mount_sd_card_file_system())
+      const uint8_t card_inserted = (sd_card_state_changed - 1);
+      if (!card_inserted || !enable_sd_card() || !mount_sd_card_file_system())
+      {
+         if (card_inserted)
+            ++sd_mount_failures;
          disable_sd_card();
+         sd_card_recovery_pending = card_inserted;
+      }
       else
+      {
          sd_card_full = 0;
-      sd_card_recovery_pending = 0;
+         sd_card_recovery_pending = 0;
+      }
       extended_timeout = 0;
    }
 }
