@@ -8,6 +8,8 @@
 // Host Communication Definitions --------------------------------------------------------------------------------------
 
 #define I2C_DEVICE_ADDRESS                144
+#define SPI_FIFO_FLUSH_LIMIT              16U
+#define DMA_RESET_SPIN_LIMIT              1000000U
 
 #ifdef PACKET_FULL_AUDIO
 #define AUDIO_DMA_BUFFER_SIZE             (sizeof(spi_buffer) / 2)
@@ -45,7 +47,7 @@ static void spi_dma_setup(void)
    WRITE_REG(GPDMA1_Channel0->CBR1, from_host_spi_dma_nodes.LinkRegisters[NODE_CBR1_DEFAULT_OFFSET]);
    WRITE_REG(GPDMA1_Channel0->CLLR, from_host_spi_dma_nodes.LinkRegisters[NODE_CLLR_LINEAR_DEFAULT_OFFSET]);
    WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT | DMA_FLAG_DTE | DMA_FLAG_SUSP));
-   SET_BIT(GPDMA1_Channel0->CCR, (DMA_IT_TC | DMA_FLAG_HT | DMA_IT_DTE | DMA_IT_SUSP | DMA_CCR_EN));
+   SET_BIT(GPDMA1_Channel0->CCR, (DMA_IT_TC | DMA_IT_HT | DMA_IT_DTE | DMA_IT_ULE | DMA_IT_USE | DMA_IT_SUSP | DMA_CCR_EN));
 }
 
 static void i2c_dma_setup(void)
@@ -102,10 +104,10 @@ void GPDMA1_Channel0_IRQHandler(void)
    }
 
    // Check if a DMA error has occurred or the transfer has been suspended
-   if (READ_BIT(GPDMA1_Channel0->CSR, (DMA_FLAG_DTE | DMA_FLAG_SUSP)))
+   if (READ_BIT(GPDMA1_Channel0->CSR, (DMA_FLAG_DTE | DMA_FLAG_ULE | DMA_FLAG_USE | DMA_FLAG_SUSP | DMA_FLAG_TO)))
    {
-      // Clear the flag and reset the DMA channel and peripheral
-      WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
+      // Clear the flags and reset the DMA channel and peripheral
+      WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_DTE | DMA_FLAG_ULE | DMA_FLAG_USE | DMA_FLAG_SUSP | DMA_FLAG_TO));
       SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
       CLEAR_BIT(SPI1->CR1, SPI_CR1_SPE);
 
@@ -117,10 +119,10 @@ void GPDMA1_Channel0_IRQHandler(void)
 void GPDMA1_Channel1_IRQHandler(void)
 {
    // Check if a DMA error has occurred or the transfer has been suspended
-   if (READ_BIT(GPDMA1_Channel1->CSR, (DMA_FLAG_DTE | DMA_FLAG_SUSP)))
+   if (READ_BIT(GPDMA1_Channel1->CSR, (DMA_FLAG_DTE | DMA_FLAG_ULE | DMA_FLAG_USE | DMA_FLAG_SUSP | DMA_FLAG_TO)))
    {
-      // Clear the flag and reset the DMA channel and peripheral
-      WRITE_REG(GPDMA1_Channel1->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
+      // Clear the flags and reset the DMA channel and peripheral
+      WRITE_REG(GPDMA1_Channel1->CFCR, (DMA_FLAG_DTE | DMA_FLAG_ULE | DMA_FLAG_USE | DMA_FLAG_SUSP | DMA_FLAG_TO));
       SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
       i2c_dma_setup();
    }
@@ -231,7 +233,7 @@ static void from_host_spi_init(void)
 
    // Reset the SPI DMA peripheral
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN))
+   for (uint32_t spins = 0; READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN) && (spins < DMA_RESET_SPIN_LIMIT); ++spins)
       SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
 
    // Initialize the SPI host-to-AI communications peripheral
@@ -241,6 +243,9 @@ static void from_host_spi_init(void)
    WRITE_REG(SPI1->CFG1, (SPI_BAUDRATEPRESCALER_4 | crc_length | SPI_FIFO_THRESHOLD_04DATA | SPI_DATASIZE_32BIT | SPI_CFG1_RXDMAEN));
    WRITE_REG(SPI1->CFG2, (SPI_NSS_PULSE_ENABLE | SPI_NSS_POLARITY_LOW | SPI_NSS_HARD_INPUT | SPI_MODE_SLAVE | SPI_DIRECTION_2LINES_RXONLY | SPI_CFG2_COMM_1));
    CLEAR_BIT(SPI1->I2SCFGR, SPI_I2SCFGR_I2SMOD);
+   WRITE_REG(SPI1->IFCR, (SPI_IFCR_OVRC | SPI_IFCR_UDRC | SPI_IFCR_MODFC | SPI_IFCR_TIFREC | SPI_IFCR_CRCEC | SPI_IFCR_EOTC | SPI_IFCR_TXTFC | SPI_IFCR_SUSPC));
+   for (uint32_t i = 0; (i < SPI_FIFO_FLUSH_LIMIT) && READ_BIT(SPI1->SR, (SPI_SR_RXP | SPI_SR_RXWNE | SPI_SR_RXPLVL)); ++i)
+      (void)READ_REG(SPI1->RXDR);
 
    // Enable all necessary DMA and SPI CS de-assertion interrupts
    NVIC_SetPriority(GPDMA1_Channel0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
@@ -289,7 +294,7 @@ static void to_host_i2c_init(void)
 
    // Reset and configure the I2C DMA peripheral
    SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN))
+   for (uint32_t spins = 0; READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN) && (spins < DMA_RESET_SPIN_LIMIT); ++spins)
       SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
    i2c_dma_setup();
 
@@ -329,7 +334,7 @@ static void from_host_spi_deinit(void)
 
    // Ensure that the SPI DMA peripheral has been reset
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN))
+   for (uint32_t spins = 0; READ_BIT(GPDMA1_Channel0->CCR, DMA_CCR_EN) && (spins < DMA_RESET_SPIN_LIMIT); ++spins)
       SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
 }
 
@@ -357,7 +362,7 @@ static void to_host_i2c_deinit(void)
 
    // Ensure that the I2C DMA peripheral has been reset
    SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
-   while (READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN))
+   for (uint32_t spins = 0; READ_BIT(GPDMA1_Channel1->CCR, DMA_CCR_EN) && (spins < DMA_RESET_SPIN_LIMIT); ++spins)
       SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
 }
 
@@ -409,7 +414,7 @@ void comms_transmit(uint8_t *data, uint8_t data_len)
       WRITE_REG(GPDMA1_Channel1->CBR1, data_len);
       WRITE_REG(GPDMA1_Channel1->CSAR, (uint32_t)data);
       WRITE_REG(GPDMA1_Channel1->CFCR, (DMA_FLAG_TC | DMA_FLAG_HT | DMA_FLAG_DTE | DMA_FLAG_SUSP | DMA_FLAG_ULE | DMA_FLAG_USE | DMA_FLAG_TO));
-      SET_BIT(GPDMA1_Channel1->CCR, (DMA_IT_DTE | DMA_IT_SUSP | DMA_CCR_EN));
+      SET_BIT(GPDMA1_Channel1->CCR, (DMA_IT_DTE | DMA_IT_ULE | DMA_IT_USE | DMA_IT_SUSP | DMA_CCR_EN));
 
       // Initiate an I2C transmission to the host
       const uint32_t reg_val = ((uint32_t)I2C_DEVICE_ADDRESS | ((uint32_t)data_len << I2C_CR2_NBYTES_Pos) | I2C_CR2_AUTOEND | I2C_CR2_START);
