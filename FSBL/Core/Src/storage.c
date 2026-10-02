@@ -22,6 +22,9 @@
 #define FLAC_ENCODER_BLOCK_SIZE               4096
 
 #define AUDIO_CLIP_HISTORY_NUM_SAMPLES        (STORAGE_AUDIO_CLIP_HISTORY_MS * (AUDIO_PACKET_SAMPLE_RATE / 1000))
+
+#define SD_RECOVERY_QUICK_ATTEMPTS            4
+#define SD_RECOVERY_BACKOFF_INTERVALS         120
 #define SD_CARD_BUFFER_NUM_BYTES              16384
 
 #define FLAC_HISTORY_NUM_FRAMES               ((AUDIO_CLIP_HISTORY_NUM_SAMPLES + FLAC_ENCODER_BLOCK_SIZE - 1) / FLAC_ENCODER_BLOCK_SIZE)
@@ -63,7 +66,7 @@ static volatile uint32_t sd_xfer_context, sd_result_ready, sd_mount_failures, sd
 static volatile uint8_t sd_rx_cplt, sd_tx_cplt, sd_card_initialized, sd_card_state_changed, sd_card_recovery_pending;
 static uint8_t sd_card_full, work_buf[FF_MAX_SS], extended_timeout, sd_low_voltage_active;
 static uint32_t min_clip_samples, samples_written, output_buffer_len, timeout_num_cycles;
-static uint32_t sd_recovery_last_attempt_tick;
+static uint32_t sd_recovery_last_attempt_tick, sd_recovery_attempts, sd_recovery_backoff;
 static char time_string[10], audio_directory[14], file_name[32];
 static sd_card_details_t sd_card_details;
 static double next_timestamp;
@@ -1213,11 +1216,16 @@ void storage_handle_sd_card_state_change(void)
    // Attempt to recover a pending SD card error
    if (sd_card_recovery_pending)
    {
+      // Retry quickly a handful of times
       const uint32_t recovery_retry_cycles = (SystemCoreClock + 3U) / 4U;
       if ((DWT->CYCCNT - sd_recovery_last_attempt_tick) < recovery_retry_cycles)
          return;
       sd_recovery_last_attempt_tick = DWT->CYCCNT;
-
+      if ((sd_recovery_attempts >= SD_RECOVERY_QUICK_ATTEMPTS) && (++sd_recovery_backoff < SD_RECOVERY_BACKOFF_INTERVALS))
+         return;
+      sd_recovery_backoff = 0;
+      if (sd_recovery_attempts < 0xFFFFFFFFU)
+         ++sd_recovery_attempts;
       extended_timeout = 1;
       disable_sd_card();
       if (READ_BIT(SD_CARD_DETECT_GPIO_Port->IDR, SD_CARD_DETECT_Pin))
@@ -1226,6 +1234,7 @@ void storage_handle_sd_card_state_change(void)
          {
             sd_card_recovery_pending = 0;
             sd_card_full = 0;
+            sd_recovery_attempts = sd_recovery_backoff = 0;
          }
          else
             disable_sd_card();
@@ -1240,6 +1249,7 @@ void storage_handle_sd_card_state_change(void)
    {
       // Attempt to initialize or disable the SD card based on its detection status
       extended_timeout = 1;
+      sd_recovery_attempts = sd_recovery_backoff = 0;
       const uint8_t card_inserted = (sd_card_state_changed - 1);
       if (!card_inserted || !enable_sd_card() || !mount_sd_card_file_system())
       {

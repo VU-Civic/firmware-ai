@@ -327,7 +327,7 @@ static void from_host_spi_deinit(void)
    // Abort all DMA and SPI transfers
    const uint32_t tick_start = DWT->CYCCNT;
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_SUSP);
-   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4));
+   while (!READ_BIT(GPDMA1_Channel0->CSR, DMA_FLAG_SUSP) && ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4)));
    WRITE_REG(GPDMA1_Channel0->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
    SET_BIT(GPDMA1_Channel0->CCR, DMA_CCR_RESET);
    CLEAR_BIT(SPI1->CR1, SPI_CR1_SPE);
@@ -348,7 +348,7 @@ static void to_host_i2c_deinit(void)
    // Abort all DMA and I2C transfers
    const uint32_t tick_start = DWT->CYCCNT;
    SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_SUSP);
-   while ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4));
+   while (!READ_BIT(GPDMA1_Channel1->CSR, DMA_FLAG_SUSP) && ((DWT->CYCCNT - tick_start) < (SystemCoreClock / 4)));
    WRITE_REG(GPDMA1_Channel1->CFCR, (DMA_FLAG_DTE | DMA_FLAG_SUSP));
    SET_BIT(GPDMA1_Channel1->CCR, DMA_CCR_RESET);
 
